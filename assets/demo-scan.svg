@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 400">
+  <defs>
+    <style>
+      .bg { fill: #0a0a0b; }
+      .chrome { fill: #161618; }
+      .dot-r { fill: #ff5f56; }
+      .dot-y { fill: #ffbd2e; }
+      .dot-g { fill: #27c93f; }
+      .t-title { fill: #555555; font-family: 'Fira Code', monospace; font-size: 11px; }
+      .prompt { fill: #888888; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .cmd { fill: #f0f0f0; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .accent { fill: #4ade80; font-family: 'Fira Code', monospace; font-size: 13px; font-weight: bold; }
+      .dim { fill: #555555; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .purple { fill: #ba68c8; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .yellow { fill: #fff176; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .green-node { fill: #aed581; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .red-node { fill: #e57373; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .blue { fill: #64b5f6; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .primary { fill: #f0f0f0; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .status-active { fill: #4ade80; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .status-progress { fill: #64b5f6; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .status-blocked { fill: #e57373; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .tree { fill: #555555; font-family: 'Fira Code', monospace; font-size: 13px; }
+      .muted-sm { fill: #555555; font-family: 'Fira Code', monospace; font-size: 12px; }
+    </style>
+  </defs>
+
+  <rect width="680" height="400" rx="8" class="bg"/>
+  <rect width="680" height="32" rx="8" class="chrome"/>
+  <rect y="16" width="680" height="16" class="chrome"/>
+  <line x1="0" y1="32" x2="680" y2="32" stroke="#222225" stroke-width="1"/>
+  <circle cx="20" cy="16" r="5" class="dot-r"/>
+  <circle cx="38" cy="16" r="5" class="dot-y"/>
+  <circle cx="56" cy="16" r="5" class="dot-g"/>
+  <text x="340" y="20" text-anchor="middle" class="t-title">brain scan</text>
+
+  <!-- Command -->
+  <text x="20" y="58" class="prompt">$</text>
+  <text x="36" y="58" class="cmd">brain scan my-project</text>
+
+  <!-- Root -->
+  <text x="20" y="92" class="primary">My Project</text>
+  <text x="145" y="92" class="dim">(project)</text>
+  <text x="230" y="92" class="status-active">active</text>
+
+  <!-- Hop 1 -->
+  <text x="20" y="118" class="tree">|</text>
+  <text x="20" y="134" class="dim">hop 1</text>
+  <text x="80" y="134" class="dim">(4 nodes)</text>
+
+  <text x="40" y="158" class="tree">|--</text>
+  <text x="72" y="158" class="yellow">alice</text>
+  <text x="130" y="158" class="dim">(person)</text>
+  <text x="210" y="158" class="status-active">active</text>
+
+  <text x="40" y="178" class="tree">|--</text>
+  <text x="72" y="178" class="yellow">bob</text>
+  <text x="115" y="178" class="dim">(person)</text>
+  <text x="195" y="178" class="status-active">active</text>
+
+  <text x="40" y="198" class="tree">|--</text>
+  <text x="72" y="198" class="green-node">ship-auth</text>
+  <text x="175" y="198" class="dim">(goal)</text>
+  <text x="240" y="198" class="status-progress">in_progress</text>
+
+  <text x="40" y="218" class="tree">|--</text>
+  <text x="72" y="218" class="red-node">api-migration</text>
+  <text x="210" y="218" class="dim">(blocker)</text>
+  <text x="300" y="218" class="status-blocked">blocked</text>
+
+  <!-- Hop 2 -->
+  <text x="20" y="248" class="tree">|</text>
+  <text x="20" y="264" class="dim">hop 2</text>
+  <text x="80" y="264" class="dim">(5 nodes)</text>
+
+  <text x="40" y="288" class="tree">|--</text>
+  <text x="72" y="288" class="dim">implement-oauth</text>
+  <text x="225" y="288" class="dim">(task)</text>
+  <text x="280" y="288" class="status-progress">in_progress</text>
+
+  <text x="40" y="308" class="tree">|--</text>
+  <text x="72" y="308" class="dim">write-tests</text>
+  <text x="190" y="308" class="dim">(task)</text>
+  <text x="245" y="308" class="dim">pending</text>
+
+  <text x="40" y="328" class="tree">|--</text>
+  <text x="72" y="328" class="dim">review-spec</text>
+  <text x="185" y="328" class="dim">(task)</text>
+  <text x="240" y="328" class="status-active">active</text>
+
+  <text x="40" y="348" class="tree">|--</text>
+  <text x="72" y="348" class="dim">deploy-staging</text>
+  <text x="215" y="348" class="dim">(task)</text>
+  <text x="270" y="348" class="dim">pending</text>
+
+  <text x="40" y="368" class="tree">|--</text>
+  <text x="72" y="368" class="dim">oauth-decided</text>
+  <text x="205" y="368" class="dim">(event)</text>
+  <text x="265" y="368" class="dim">active</text>
+
+  <!-- Summary -->
+  <text x="20" y="394" class="muted-sm">12 nodes, 18 edges, depth 3</text>
+</svg>

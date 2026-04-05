@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brain-cli"
+version = "0.1.0"
+description = "Knowledge graph CLI for structured memory in Claude Code"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "X-Arc AI", email = "contact@x-arc.ai" },
+]
+keywords = ["knowledge-graph", "claude-code", "memory", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "kuzu>=0.11.0",
+    "click>=8.1.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+embeddings = ["openai>=1.0.0"]
+memory = ["agent-memory @ git+https://github.com/X-Arc-ai/memory.git"]
+all = ["brain-cli[embeddings,memory]"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+brain = "brain_cli.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/X-Arc-ai/brain-cli"
+Repository = "https://github.com/X-Arc-ai/brain-cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["brain_cli*"]
+
+[tool.setuptools.package-data]
+brain_cli = [
+    "data/viz/*",
+    "data/hooks/*",
+    "data/skills/brain-dream/*",
+    "data/CLAUDE.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

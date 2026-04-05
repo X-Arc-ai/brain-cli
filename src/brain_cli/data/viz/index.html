@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>brain</title>
+    <script src="cytoscape.min.js"></script>
+    <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+    <header>
+        <div class="bar-left">
+            <span class="logo">brain</span>
+            <input id="search" type="text" placeholder="Search..." spellcheck="false">
+        </div>
+        <div class="bar-center">
+            <button class="pill active" data-layout="cluster">Cluster</button>
+            <button class="pill" data-layout="cose">Force</button>
+            <button class="pill" data-layout="breadthfirst">Tree</button>
+        </div>
+        <div class="bar-right">
+            <label class="toggle"><input type="checkbox" id="active-only"><span>Active only</span></label>
+            <span id="meta"></span>
+        </div>
+    </header>
+
+    <main>
+        <aside id="filters">
+            <section>
+                <h6>Type</h6>
+                <div id="type-filters"></div>
+            </section>
+            <section>
+                <h6>Status</h6>
+                <div id="status-filters"></div>
+            </section>
+            <section>
+                <h6>Freshness</h6>
+                <input type="range" id="staleness-slider" min="0" max="90" value="90">
+                <span id="staleness-label">All</span>
+            </section>
+        </aside>
+        <div id="cy"></div>
+    </main>
+
+    <div id="panel">
+        <button id="panel-close">&times;</button>
+        <div id="panel-body"></div>
+    </div>
+
+    <div id="ctx" class="closed">
+        <button class="ctx-item" data-action="chain">Dependency chain</button>
+        <button class="ctx-item" data-action="blast">Blast radius</button>
+        <button class="ctx-item" data-action="reset">Reset view</button>
+    </div>
+
+    <script src="app.js?v=1"></script>
+</body>
+</html>
