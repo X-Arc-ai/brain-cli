@@ -71,6 +71,31 @@ class TestGetNode:
         assert node["properties"] == {"key": "value"}
 
 
+class TestEndedEdgeFiltering:
+    def test_get_node_omits_ended_edges(self, db_conn):
+        from brain_cli.writer import end_edge
+        create_node(db_conn, _node("ee_a", node_type="project", title="A"))
+        create_node(db_conn, _node("ee_b", node_type="person", title="B"))
+        create_edge(db_conn, _edge("ee_a", "ee_b", "owned by"))
+        end_edge(db_conn, "ee_a", "ee_b", "owned by")
+
+        node = get_node(db_conn, "ee_a")
+        assert all(e["e.verb"] != "owned by" for e in node["edges_out"])
+        node_b = get_node(db_conn, "ee_b")
+        assert all(e["e.verb"] != "owned by" for e in node_b["edges_in"])
+
+    def test_get_context_omits_ended_edges(self, db_conn):
+        from brain_cli.writer import end_edge
+        create_node(db_conn, _node("ec_a", node_type="project", title="A"))
+        create_node(db_conn, _node("ec_b", node_type="person", title="B"))
+        create_edge(db_conn, _edge("ec_a", "ec_b", "owned by"))
+        end_edge(db_conn, "ec_a", "ec_b", "owned by")
+
+        ctx = get_context(db_conn, "ec_a")
+        all_ids = {n["id"] for group in ctx["connected"].values() for n in group}
+        assert "ec_b" not in all_ids
+
+
 # ---------------------------------------------------------------------------
 # scan_subgraph
 # ---------------------------------------------------------------------------

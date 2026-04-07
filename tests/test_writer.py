@@ -220,12 +220,16 @@ class TestCreateEdge:
     def test_create_edge_missing_verb_raises(self, db_conn):
         create_node(db_conn, _make_node("src3", node_type="person", title="Carol"))
         create_node(db_conn, _make_node("dst3", node_type="project", title="P2"))
-        with pytest.raises(ValueError, match="Missing required field: verb"):
+        with pytest.raises(ValueError, match="Missing required edge field"):
             create_edge(db_conn, {"from": "src3", "to": "dst3"})
 
     def test_create_edge_missing_from_field_raises(self, db_conn):
-        with pytest.raises(ValueError, match="Missing required field: from"):
+        with pytest.raises(ValueError, match="Missing required edge field"):
             create_edge(db_conn, {"to": "dst3", "verb": "works on"})
+
+    def test_create_edge_error_lists_received_keys(self, db_conn):
+        with pytest.raises(ValueError, match=r"Got keys"):
+            create_edge(db_conn, {"from_id": "x", "to_id": "y", "verb": "z"})
 
     def test_create_edge_stores_note(self, db_conn):
         create_node(db_conn, _make_node("src4", node_type="person", title="Dan"))

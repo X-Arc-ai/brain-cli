@@ -47,14 +47,12 @@ class TestSlugify:
     def test_numbers_preserved(self):
         assert _slugify("project-v2-alpha") == "project-v2-alpha"
 
-    def test_underscores_stripped_not_preserved(self):
-        # The regex strips non-alphanumeric chars other than spaces and hyphens.
-        # Underscores are stripped, not converted to hyphens.
-        result = _slugify("my_project_name")
-        # Result should be lowercase with no underscores
-        assert "_" not in result
-        assert "my" in result
-        assert "project" in result
+    def test_underscores_become_hyphens(self):
+        # Underscores survive the character class so they can be converted
+        # to hyphens by the next pass.
+        assert _slugify("my_project_name") == "my-project-name"
+        assert _slugify("foo  bar") == "foo-bar"
+        assert _slugify("Mixed_Case Name") == "mixed-case-name"
 
 
 # ---------------------------------------------------------------------------

@@ -40,16 +40,44 @@ def _create_node_via_cli(runner, env, node_id, node_type="project", title=None):
 
 class TestCliMeta:
     def test_version(self):
+        from brain_cli import __version__
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert __version__ in result.output
 
     def test_help(self):
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "brain" in result.output.lower()
+
+
+class TestQueryCypherSafety:
+    def test_read_only_rejects_delete(self, brain_dir):
+        runner, env = _runner_with_brain(brain_dir)
+        result = runner.invoke(
+            cli,
+            ["query", "cypher", "MATCH (n:Node) DETACH DELETE n", "--read-only"],
+            env=env,
+        )
+        assert result.exit_code == 2
+        assert "destructive" in result.output.lower()
+
+    def test_read_only_allows_match(self, brain_dir):
+        runner, env = _runner_with_brain(brain_dir)
+        result = runner.invoke(
+            cli,
+            ["query", "cypher", "MATCH (n:Node) RETURN count(n)", "--read-only"],
+            env=env,
+        )
+        assert result.exit_code == 0
+
+    def test_help_warns_about_destructive(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["query", "cypher", "--help"])
+        assert "WARNING" in result.output
+        assert "delete data" in result.output.lower() or "modify" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------

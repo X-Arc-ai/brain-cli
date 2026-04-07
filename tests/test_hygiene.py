@@ -1,5 +1,7 @@
 """Tests for brain_cli.hygiene -- duplicates, orphans, completeness, verbs."""
 
+import os
+
 import pytest
 
 from brain_cli.writer import create_node, create_edge
@@ -7,6 +9,9 @@ from brain_cli.hygiene import (
     find_duplicates,
     find_orphans,
     check_completeness,
+    check_content_drift,
+    check_file_paths,
+    check_operational_readiness,
     audit_verbs,
 )
 
@@ -193,3 +198,95 @@ class TestAuditVerbs:
         result = audit_verbs(db_conn)
         counts = [r["count"] for r in result]
         assert counts == sorted(counts, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# check_file_paths
+# ---------------------------------------------------------------------------
+
+class TestCheckFilePaths:
+    def test_active_structural_node_without_file_path_flagged(self, db_conn):
+        create_node(db_conn, _node(
+            "fp1", node_type="project", title="P", status="active"
+        ))
+        violations = check_file_paths(db_conn)
+        assert any(v["node_id"] == "fp1" for v in violations)
+
+    def test_node_with_existing_file_path_passes(self, tmp_path, db_conn, brain_dir, monkeypatch):
+        f = tmp_path / "exists.md"
+        f.write_text("hi")
+        monkeypatch.setenv("BRAIN_PROJECT_ROOT", str(tmp_path))
+        create_node(db_conn, _node(
+            "fp2", node_type="project", title="P2",
+            status="active", file_path="exists.md",
+        ))
+        violations = check_file_paths(db_conn)
+        # fp2 should not appear
+        broken = [v for v in violations
+                  if v["node_id"] == "fp2"
+                  and v.get("check") in ("missing_file_path", "broken_file_path")]
+        assert broken == []
+
+    def test_node_with_broken_file_path_flagged(self, db_conn, brain_dir, monkeypatch, tmp_path):
+        monkeypatch.setenv("BRAIN_PROJECT_ROOT", str(tmp_path))
+        create_node(db_conn, _node(
+            "fp3", node_type="project", title="P3",
+            status="active", file_path="missing.md",
+        ))
+        violations = check_file_paths(db_conn)
+        assert any(
+            v["node_id"] == "fp3" and v.get("check") == "broken_file_path"
+            for v in violations
+        )
+
+
+# ---------------------------------------------------------------------------
+# check_content_drift
+# ---------------------------------------------------------------------------
+
+class TestCheckContentDrift:
+    def test_thin_brain_content_detected(self, tmp_path, db_conn, brain_dir, monkeypatch):
+        # File 3x+ longer than brain content (and brain is < 500 chars)
+        f = tmp_path / "doc.md"
+        f.write_text("# H1\n\n" + ("This is a very long document. " * 100))
+        monkeypatch.setenv("BRAIN_PROJECT_ROOT", str(tmp_path))
+        create_node(db_conn, _node(
+            "doc1", node_type="project", title="Doc",
+            status="active", file_path="doc.md",
+            content="short",
+        ))
+        violations = check_content_drift(db_conn)
+        assert any(
+            v["node_id"] == "doc1" and v.get("check") == "thin_brain_content"
+            for v in violations
+        )
+
+
+# ---------------------------------------------------------------------------
+# check_operational_readiness
+# ---------------------------------------------------------------------------
+
+class TestCheckOperationalReadiness:
+    def test_goal_without_tasks_or_blockers_flagged(self, db_conn):
+        create_node(db_conn, _node("og1", node_type="goal", title="G", status="active"))
+        violations = check_operational_readiness(db_conn)
+        assert any(v["node_id"] == "og1" for v in violations)
+
+    def test_goal_with_outgoing_decomposition_passes(self, db_conn):
+        create_node(db_conn, _node("og2", node_type="goal", title="G2", status="active"))
+        create_node(db_conn, _node("ot2", node_type="task", title="T2", status="active"))
+        create_edge(db_conn, _edge("og2", "ot2", "has task"))
+        violations = check_operational_readiness(db_conn)
+        assert all(v["node_id"] != "og2" for v in violations)
+
+    def test_goal_with_blocker_passes(self, db_conn):
+        create_node(db_conn, _node("og3", node_type="goal", title="G3", status="active"))
+        create_node(db_conn, _node("ob3", node_type="blocker", title="B3", status="active"))
+        create_edge(db_conn, _edge("og3", "ob3", "blocked by"))
+        violations = check_operational_readiness(db_conn)
+        assert all(v["node_id"] != "og3" for v in violations)
+
+    def test_pending_decision_without_edges_flagged(self, db_conn):
+        create_node(db_conn, _node("od1", node_type="decision", title="D", status="pending"))
+        violations = check_operational_readiness(db_conn)
+        assert any(v["node_id"] == "od1" for v in violations)
