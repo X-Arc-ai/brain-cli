@@ -8,32 +8,40 @@ If these were module-level constants, they'd resolve to ~/.brain/ before
 
 import os
 import json
+from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime, timezone
 
 
 # --- Path Resolution (LAZY) ---
 
-_brain_dir_override: Path | None = None
+_brain_dir_override: ContextVar[Path | None] = ContextVar(
+    "brain_dir_override", default=None
+)
 
 
-def set_brain_dir(path: Path) -> None:
-    """Override brain directory (used by brain init to set project-local path)."""
-    global _brain_dir_override
-    _brain_dir_override = path
+def set_brain_dir(path: Path | None) -> None:
+    """Override brain directory.
+
+    Used by `brain init` to set a project-local path and by tests for
+    isolation. Backed by a ContextVar so concurrent callers (e.g., tests
+    running in parallel) don't stomp on each other.
+    """
+    _brain_dir_override.set(path)
 
 
 def get_brain_dir() -> Path:
     """Resolve brain data directory.
 
     Priority:
-    1. Explicit override (set by brain init)
+    1. Explicit override (set by brain init or tests, via ContextVar)
     2. BRAIN_DIR env var
     3. .brain/ in current working directory (project-local)
     4. ~/.brain/ (global fallback)
     """
-    if _brain_dir_override:
-        return _brain_dir_override
+    override = _brain_dir_override.get()
+    if override is not None:
+        return override
     env = os.environ.get("BRAIN_DIR")
     if env:
         return Path(env)

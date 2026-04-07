@@ -15,7 +15,6 @@ from rich.prompt import Confirm
 
 from .config import get_brain_dir, get_project_root, get_data_dir, set_brain_dir
 from .database import get_connection
-from .schema import create_schema
 from .writer import execute_batch
 
 console = Console()
@@ -35,7 +34,7 @@ _PROJECT_MANIFESTS = [
 ]
 
 
-def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=False):
+def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=False, yes=False):
     """Run the full brain init flow."""
     root = Path(project_root) if project_root else Path.cwd()
 
@@ -60,10 +59,10 @@ def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=Fa
     proposals = _step_3_analyze_project(root)
 
     if proposals:
-        _step_4_show_proposals(proposals, skip_viz)
+        _step_4_show_proposals(proposals, skip_viz, yes=yes)
 
     if not skip_hooks:
-        _step_5_install_behaviors(root, brain_dir)
+        _step_5_install_behaviors(root, brain_dir, yes=yes)
 
     console.print(f"\n[#4ade80]Brain initialized.[/] "
                   f"Your graph is at [dim]{brain_dir}[/]")
@@ -90,9 +89,8 @@ def _step_1_create_dirs(brain_dir):
             "brain_path": brain_path,
         }, indent=2))
 
-    conn = get_connection()
-    create_schema(conn)
-    del conn
+    # Eagerly initialize the DB so the schema is in place after init returns.
+    get_connection()
 
     console.print("[green]v[/] Brain directory created")
 
@@ -194,7 +192,7 @@ def _step_3_analyze_project(root):
     return proposals
 
 
-def _step_4_show_proposals(proposals, skip_viz):
+def _step_4_show_proposals(proposals, skip_viz, yes=False):
     """Show proposed graph and ask for confirmation."""
     nodes = [p for p in proposals if p.get("op") == "create_node"]
     edges = [p for p in proposals if p.get("op") == "create_edge"]
@@ -206,11 +204,9 @@ def _step_4_show_proposals(proposals, skip_viz):
     console.print(tree)
     console.print(f"\n[dim]{len(nodes)} nodes, {len(edges)} edges[/]")
 
-    if Confirm.ask("\nApply this graph?", default=True):
+    if yes or Confirm.ask("\nApply this graph?", default=True):
         conn = get_connection()
-        create_schema(conn)
         result = execute_batch(conn, proposals)
-        del conn
         summary = result[-1]["summary"]
         console.print(f"[green]v[/] Graph created: "
                       f"{summary['total']} operations "
@@ -219,22 +215,22 @@ def _step_4_show_proposals(proposals, skip_viz):
 
         if not skip_viz:
             from .exporter import export_cytoscape
-            conn2 = get_connection()
-            export_cytoscape(conn2)
-            del conn2
+            export_cytoscape(get_connection())
             console.print("\nOpening visualization...")
             _open_viz()
     else:
         console.print("[dim]Skipped. You can run brain init again anytime.[/]")
 
 
-def _step_5_install_behaviors(root, brain_dir):
+def _step_5_install_behaviors(root, brain_dir, yes=False):
     """Install CLAUDE.md, hooks, and brain-dream skill."""
     claude_dir = root / ".claude"
 
     if not claude_dir.exists():
-        if not Confirm.ask("Install Claude Code integration (CLAUDE.md + hooks)?",
-                           default=True):
+        if not yes and not Confirm.ask(
+            "Install Claude Code integration (CLAUDE.md + hooks)?",
+            default=True,
+        ):
             return
 
     brain_claude_md = _get_brain_claude_md()
@@ -388,7 +384,7 @@ def _open_viz():
 def _slugify(text):
     """Convert text to a node ID slug."""
     slug = text.lower().strip()
-    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+    slug = re.sub(r'[^a-z0-9\s_-]', '', slug)
     slug = re.sub(r'[\s_]+', '-', slug)
     slug = re.sub(r'-+', '-', slug)
     return slug.strip('-')[:50]

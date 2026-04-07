@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone, timedelta
 
 from .config import STALENESS_HIGH, STALENESS_MEDIUM, STALENESS_LOW
-from .utils import rows_to_dicts
+from .utils import compute_staleness_for_node, rows_to_dicts
 
 
 def _now():
@@ -25,12 +25,14 @@ def _parse_recurring(row):
 
     Returns (is_recurring, frequency, last_completed) or (False, None, None).
     """
-    props_str = row.get("n.properties") or ""
-    if '"recurring": true' not in props_str and '"recurring":true' not in props_str:
+    props_str = row.get("n.properties")
+    if not props_str:
         return False, None, None
     try:
         props = json.loads(props_str)
     except (json.JSONDecodeError, TypeError):
+        return False, None, None
+    if not isinstance(props, dict) or not props.get("recurring"):
         return False, None, None
     return True, props.get("frequency"), props.get("last_completed")
 
@@ -101,27 +103,22 @@ def compute_staleness(conn):
         ORDER BY n.updated_at ASC
     """)
     rows = rows_to_dicts(result)
-    now = _now()
     stale = []
     for row in rows:
         is_recurring, _, _ = _parse_recurring(row)
         if is_recurring:
             continue
-        updated = _to_aware(row.get("n.updated_at"))
-        verified = _to_aware(row.get("n.verified_at"))
-        last_touch = verified if (verified and updated and verified > updated) else updated
-        if last_touch is None:
-            continue
-        days = (now - last_touch).days
-        if days >= STALENESS_HIGH:
-            level = "CRITICAL" if days >= STALENESS_LOW else ("WARNING" if days >= STALENESS_MEDIUM else "INFO")
+        level, days = compute_staleness_for_node(
+            row.get("n.updated_at"), row.get("n.verified_at")
+        )
+        if level in ("info", "warning", "critical"):
             stale.append({
                 "id": row["n.id"],
                 "title": row["n.title"],
                 "type": row["n.type"],
                 "status": row["n.status"],
                 "days_stale": days,
-                "level": level,
+                "level": level.upper(),
             })
     return stale
 

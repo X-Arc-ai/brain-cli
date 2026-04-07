@@ -1,28 +1,8 @@
 import json
 from datetime import datetime, timezone
 
-from .config import get_export_dir, STALENESS_HIGH, STALENESS_MEDIUM, STALENESS_LOW
-from .utils import rows_to_dicts
-
-
-def _staleness_level(updated_at, verified_at):
-    """Compute staleness level for a node."""
-    now = datetime.now(timezone.utc)
-    last_touch = verified_at if (verified_at and updated_at and verified_at > updated_at) else updated_at
-    if last_touch is None:
-        return "unknown", None
-    if isinstance(last_touch, str):
-        last_touch = datetime.fromisoformat(last_touch)
-    if last_touch.tzinfo is None:
-        last_touch = last_touch.replace(tzinfo=timezone.utc)
-    days = (now - last_touch).days
-    if days >= STALENESS_LOW:
-        return "critical", days
-    elif days >= STALENESS_MEDIUM:
-        return "warning", days
-    elif days >= STALENESS_HIGH:
-        return "info", days
-    return "ok", days
+from .config import get_export_dir
+from .utils import compute_staleness_for_node as _staleness_level, rows_to_dicts
 
 
 def _serialize(obj):
@@ -30,6 +10,22 @@ def _serialize(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def _decode_properties(raw):
+    """Decode the n.properties column.
+
+    Properties are stored as JSON strings inside Kuzu but should be exported
+    as nested objects so re-importing them does not double-encode the value.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+    return raw
 
 
 def export_cytoscape(conn):
@@ -102,6 +98,9 @@ def export_json(conn):
         "MATCH (n:Node) RETURN n.id, n.type, n.title, n.status, n.created_at, "
         "n.updated_at, n.verified_at, n.status_since, n.content, n.file_path, n.properties"
     ))
+    for n in nodes:
+        if "n.properties" in n:
+            n["n.properties"] = _decode_properties(n["n.properties"])
     edges = rows_to_dicts(conn.execute("""
         MATCH (a:Node)-[e:Edge]->(b:Node)
         RETURN a.id AS from_id, b.id AS to_id, e.*
@@ -142,12 +141,19 @@ def export_batch(conn):
             "id": row["n.id"],
             "type": row.get("n.type"),
             "title": row.get("n.title"),
-            "status": row.get("n.status"),
-            "content": row.get("n.content"),
-            "file_path": row.get("n.file_path"),
         }
+        # Only emit optional fields when present so re-import doesn't trip
+        # validators that reject None values (e.g., status allowlist).
+        for col, key in (
+            ("n.status", "status"),
+            ("n.content", "content"),
+            ("n.file_path", "file_path"),
+        ):
+            value = row.get(col)
+            if value is not None:
+                op[key] = value
         if row.get("n.properties"):
-            op["properties"] = row["n.properties"]
+            op["properties"] = _decode_properties(row["n.properties"])
         if row.get("n.created_at"):
             op["created_at"] = str(row["n.created_at"])
         if row.get("n.verified_at"):

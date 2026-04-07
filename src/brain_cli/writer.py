@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 
 from .config import VALID_STATUSES, get_all_types, get_immutable_types, get_tier_for_type, now
 
+# Whether we've already warned about a missing OPENAI_API_KEY this process.
+_embedding_warned = False
+
 
 def _parse_ts(value):
     """Parse a timestamp string to datetime, or return None."""
@@ -65,7 +68,25 @@ def create_node(conn, data):
         text = node_text_for_embedding(data)
         if text.strip():
             embedding = generate_embedding(text)
-    except (RuntimeError, Exception) as e:
+    except ImportError:
+        # openai package not installed -- silent skip on default install path.
+        pass
+    except RuntimeError as e:
+        msg = str(e)
+        if "OpenAI package not installed" in msg:
+            # embeddings._get_client() translates the ImportError into a
+            # RuntimeError; treat it the same way as the bare ImportError.
+            pass
+        elif "OPENAI_API_KEY" in msg:
+            # Configuration issue: warn at most once per process so tight loops
+            # don't spam stderr.
+            global _embedding_warned
+            if not _embedding_warned:
+                print(f"Warning: embedding skipped: {e}", file=sys.stderr)
+                _embedding_warned = True
+        else:
+            print(f"Warning: embedding generation failed: {e}", file=sys.stderr)
+    except Exception as e:
         print(f"Warning: embedding generation failed: {e}", file=sys.stderr)
 
     conn.execute(
@@ -198,7 +219,20 @@ def update_node(conn, data, maintenance=False):
                 emb = generate_embedding(text)
                 sets.append("n.content_embedding = $embedding")
                 params["embedding"] = emb
-        except (RuntimeError, Exception) as e:
+        except ImportError:
+            pass
+        except RuntimeError as e:
+            msg = str(e)
+            if "OpenAI package not installed" in msg:
+                pass
+            elif "OPENAI_API_KEY" in msg:
+                global _embedding_warned
+                if not _embedding_warned:
+                    print(f"Warning: embedding skipped: {e}", file=sys.stderr)
+                    _embedding_warned = True
+            else:
+                print(f"Warning: embedding generation failed: {e}", file=sys.stderr)
+        except Exception as e:
             print(f"Warning: embedding generation failed: {e}", file=sys.stderr)
 
     query = f"MATCH (n:Node {{id: $id}}) SET {', '.join(sets)}"
@@ -221,9 +255,13 @@ def archive_node(conn, node_id):
 
 def create_edge(conn, data):
     """Create a relationship edge. Validates both nodes exist first."""
-    for field in ("from", "to", "verb"):
-        if field not in data:
-            raise ValueError(f"Missing required field: {field}")
+    missing = [f for f in ("from", "to", "verb") if f not in data]
+    if missing:
+        raise ValueError(
+            f"Missing required edge field(s): {missing}. "
+            f"Edge JSON schema: {{\"from\": <id>, \"to\": <id>, \"verb\": <verb>, ...}}. "
+            f"Got keys: {sorted(data.keys())}."
+        )
 
     from_id = data["from"]
     to_id = data["to"]

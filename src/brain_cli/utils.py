@@ -1,6 +1,38 @@
 """Shared utility functions."""
 
 import json
+from datetime import datetime, timezone
+
+
+def compute_staleness_for_node(updated_at, verified_at):
+    """Compute (level, days) for a node given its timestamps.
+
+    Single source of truth used by signals.compute_staleness,
+    reader.query_stale, and exporter._staleness_level.
+
+    Levels: 'ok' | 'info' (>= STALENESS_HIGH) | 'warning' (>= STALENESS_MEDIUM)
+            | 'critical' (>= STALENESS_LOW) | 'unknown' (no timestamps).
+    """
+    # Local import avoids a circular dependency: config does not import utils,
+    # but other modules that do import config also import utils.
+    from .config import STALENESS_HIGH, STALENESS_MEDIUM, STALENESS_LOW
+
+    now = datetime.now(timezone.utc)
+    last_touch = verified_at if (verified_at and updated_at and verified_at > updated_at) else updated_at
+    if last_touch is None:
+        return "unknown", None
+    if isinstance(last_touch, str):
+        last_touch = datetime.fromisoformat(last_touch)
+    if last_touch.tzinfo is None:
+        last_touch = last_touch.replace(tzinfo=timezone.utc)
+    days = (now - last_touch).days
+    if days >= STALENESS_LOW:
+        return "critical", days
+    if days >= STALENESS_MEDIUM:
+        return "warning", days
+    if days >= STALENESS_HIGH:
+        return "info", days
+    return "ok", days
 
 
 def rows_to_dicts(result):

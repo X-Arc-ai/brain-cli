@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from . import __version__
 from .database import get_connection
-from .schema import create_schema
 from .writer import create_node, update_node, archive_node, create_edge, update_edge, end_edge, execute_batch
 from .reader import (get_node, get_context, scan_subgraph, query_cypher, query_depends_on,
                      query_blast_radius, query_chain, query_changed_since, query_stale,
@@ -31,12 +31,12 @@ def _auto_export():
         export_conn = get_connection(max_retries=1, base_delay=0)
         export_cytoscape(export_conn)
         export_batch(export_conn)
-    except Exception:
-        pass
+    except Exception as e:
+        click.echo(f"Warning: auto-export failed: {e}", err=True)
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="brain")
+@click.version_option(version=__version__, prog_name="brain")
 @click.option("--json-output", "json_mode", is_flag=True, help="Output raw JSON instead of formatted text")
 @click.pass_context
 def cli(ctx, json_mode):
@@ -52,11 +52,17 @@ def cli(ctx, json_mode):
 @click.option("--skip-memory", is_flag=True, help="Skip conversation history indexing")
 @click.option("--skip-hooks", is_flag=True, help="Skip Claude Code hook installation")
 @click.option("--skip-viz", is_flag=True, help="Skip opening visualization")
-def init_cmd(project, skip_memory, skip_hooks, skip_viz):
+@click.option("--yes", "-y", is_flag=True, help="Auto-confirm all prompts (non-interactive)")
+def init_cmd(project, skip_memory, skip_hooks, skip_viz, yes):
     """Initialize brain for a project. Analyzes codebase, proposes graph, installs hooks."""
     from .init import run_init
-    run_init(project_root=project, skip_memory=skip_memory,
-             skip_hooks=skip_hooks, skip_viz=skip_viz)
+    run_init(
+        project_root=project,
+        skip_memory=skip_memory,
+        skip_hooks=skip_hooks,
+        skip_viz=skip_viz,
+        yes=yes,
+    )
 
 
 # --- Write ---
@@ -74,14 +80,12 @@ def write_node(json_str, maintenance):
     """Create or update a node."""
     data = json.loads(json_str)
     conn = get_connection()
-    create_schema(conn)
     if data.get("op") == "update_node":
         update_node(conn, data, maintenance=maintenance)
         click.echo(f"Updated node: {data['id']}")
     else:
         create_node(conn, data)
         click.echo(f"Created node: {data['id']}")
-    del conn
     _auto_export()
 
 
@@ -91,14 +95,12 @@ def write_edge(json_str):
     """Create or update an edge."""
     data = json.loads(json_str)
     conn = get_connection()
-    create_schema(conn)
     if data.get("op") == "update_edge":
         update_edge(conn, data)
         click.echo(f"Updated edge: {data['from']} --[{data['verb']}]--> {data['to']}")
     else:
         create_edge(conn, data)
         click.echo(f"Created edge: {data['from']} --[{data['verb']}]--> {data['to']}")
-    del conn
     _auto_export()
 
 
@@ -119,11 +121,9 @@ def write_batch(json_str, file_path):
         raise click.ClickException("Batch must be a JSON array of operations")
 
     conn = get_connection()
-    create_schema(conn)
     results = execute_batch(conn, operations)
     click.echo(f"Batch complete: {len(results)} operations executed.")
     _output(results)
-    del conn
     _auto_export()
 
 
@@ -140,10 +140,8 @@ def delete():
 def delete_node(node_id):
     """Soft-delete a node (set status to archived)."""
     conn = get_connection()
-    create_schema(conn)
     archive_node(conn, node_id)
     click.echo(f"Archived node: {node_id}")
-    del conn
     _auto_export()
 
 
@@ -154,10 +152,8 @@ def delete_node(node_id):
 def delete_edge_cmd(from_id, to_id, verb):
     """End a relationship (set until = now)."""
     conn = get_connection()
-    create_schema(conn)
     end_edge(conn, from_id, to_id, verb)
     click.echo(f"Ended edge: {from_id} --[{verb}]--> {to_id}")
-    del conn
     _auto_export()
 
 
@@ -169,7 +165,6 @@ def delete_edge_cmd(from_id, to_id, verb):
 def get(ctx, node_id):
     """Get a node by ID with all its edges."""
     conn = get_connection()
-    create_schema(conn)
     node = get_node(conn, node_id)
     if node is None:
         click.echo(f"Node not found: {node_id}", err=True)
@@ -190,7 +185,6 @@ def get(ctx, node_id):
 def scan(ctx, node_id, depth):
     """Layer 1: Topology scan with progressive detail (3-hop)."""
     conn = get_connection()
-    create_schema(conn)
     result = scan_subgraph(conn, node_id, depth)
     if result is None:
         click.echo(f"Node not found: {node_id}", err=True)
@@ -211,7 +205,6 @@ def scan(ctx, node_id, depth):
 def context(ctx, node_id, depth):
     """Layer 2: Deep dive with full content."""
     conn = get_connection()
-    create_schema(conn)
     result = get_context(conn, node_id, depth)
     if result is None:
         click.echo(f"Node not found: {node_id}", err=True)
@@ -232,7 +225,6 @@ def context(ctx, node_id, depth):
 def search(ctx, query_str, type_filter):
     """Search all nodes by title, content, or ID."""
     conn = get_connection()
-    create_schema(conn)
     results = search_nodes(conn, query_str, type_filter)
     if not results:
         click.echo(f"No nodes matching: {query_str}")
@@ -254,7 +246,6 @@ def search(ctx, query_str, type_filter):
 def search_semantic_cmd(ctx, query_str, type_filter, top_k, expand):
     """Semantic search using embedding similarity."""
     conn = get_connection()
-    create_schema(conn)
     results = search_semantic(conn, query_str, type_filter=type_filter, top_k=top_k, expand=expand)
     _output(results)
 
@@ -267,12 +258,52 @@ def query():
     pass
 
 
+_DESTRUCTIVE_KEYWORDS = (
+    "DELETE", "DETACH", "SET", "CREATE", "MERGE", "REMOVE", "DROP", "ALTER",
+)
+
+
+def _looks_destructive(query_text: str) -> bool:
+    """Heuristic check: does the query contain a destructive keyword?
+
+    This is a defensive guard, not a security boundary. Treats unquoted
+    keyword tokens (whitespace-bounded) as destructive. Users determined
+    to evade this can do so trivially. Real safety comes from the LLM-facing
+    surface (the brain skill) not invoking destructive Cypher.
+    """
+    upper = query_text.upper()
+    padded = f" {upper} "
+    for kw in _DESTRUCTIVE_KEYWORDS:
+        if f" {kw} " in padded:
+            return True
+        if upper.startswith(f"{kw} "):
+            return True
+    return False
+
+
 @query.command("cypher")
 @click.argument("cypher_query")
-def query_cypher_cmd(cypher_query):
-    """Execute a raw Cypher query."""
+@click.option(
+    "--read-only",
+    is_flag=True,
+    help="Reject queries containing DELETE/SET/CREATE/MERGE/REMOVE/etc.",
+)
+def query_cypher_cmd(cypher_query, read_only):
+    """Execute a raw Cypher query.
+
+    \b
+    WARNING: This bypasses brain's schema validation and can permanently
+    modify or delete data. Use --read-only to reject destructive keywords.
+    Prefer the typed `brain write` and `brain query` commands when possible.
+    """
+    if read_only and _looks_destructive(cypher_query):
+        click.echo(
+            "Error: --read-only mode rejected query containing a destructive keyword "
+            f"(one of {', '.join(_DESTRUCTIVE_KEYWORDS)}).",
+            err=True,
+        )
+        sys.exit(2)
     conn = get_connection()
-    create_schema(conn)
     results = query_cypher(conn, cypher_query)
     _output(results)
 
@@ -282,7 +313,6 @@ def query_cypher_cmd(cypher_query):
 def query_depends_on_cmd(node_id):
     """What depends on this node?"""
     conn = get_connection()
-    create_schema(conn)
     results = query_depends_on(conn, node_id)
     _output(results)
 
@@ -293,7 +323,6 @@ def query_depends_on_cmd(node_id):
 def query_blast_radius_cmd(node_id, hops):
     """N-hop affected subgraph from a node."""
     conn = get_connection()
-    create_schema(conn)
     results = query_blast_radius(conn, node_id, hops)
     _output(results)
 
@@ -303,7 +332,6 @@ def query_blast_radius_cmd(node_id, hops):
 def query_chain_cmd(node_id):
     """Full dependency chain."""
     conn = get_connection()
-    create_schema(conn)
     results = query_chain(conn, node_id)
     _output(results)
 
@@ -313,7 +341,6 @@ def query_chain_cmd(node_id):
 def query_changed_since_cmd(date):
     """Nodes updated after a given date (YYYY-MM-DD)."""
     conn = get_connection()
-    create_schema(conn)
     results = query_changed_since(conn, date)
     _output(results)
 
@@ -323,7 +350,6 @@ def query_changed_since_cmd(date):
 def query_stale_cmd(threshold):
     """Nodes with freshness > threshold days."""
     conn = get_connection()
-    create_schema(conn)
     results = query_stale(conn, threshold)
     _output(results)
 
@@ -333,7 +359,6 @@ def query_stale_cmd(threshold):
 def query_person_cmd(person_id):
     """Full person assessment subgraph."""
     conn = get_connection()
-    create_schema(conn)
     results = query_person(conn, person_id)
     _output(results)
 
@@ -345,7 +370,6 @@ def query_person_cmd(person_id):
 def signals(ctx):
     """Compute and display all active signals."""
     conn = get_connection()
-    create_schema(conn)
     results = compute_all_signals(conn)
     if ctx.obj.get("json_mode"):
         _output(results)
@@ -361,7 +385,6 @@ def signals(ctx):
 def stats(ctx):
     """Show node/edge counts by type."""
     conn = get_connection()
-    create_schema(conn)
     results = get_stats(conn)
     if ctx.obj.get("json_mode"):
         _output(results)
@@ -377,7 +400,6 @@ def stats(ctx):
 def export_cmd(fmt):
     """Export graph for visualization or backup."""
     conn = get_connection()
-    create_schema(conn)
     if fmt == "cytoscape":
         path, nodes, edges = export_cytoscape(conn)
         click.echo(f"Exported {nodes} nodes, {edges} edges to {path}")
@@ -405,7 +427,6 @@ def embed_backfill(force):
     from .embeddings import generate_embeddings_batch, node_text_for_embedding, EMBEDDING_DIMS
 
     conn = get_connection()
-    create_schema(conn)
 
     nodes = get_all_nodes_for_embedding(conn)
     if not force:
@@ -441,7 +462,6 @@ def embed_backfill(force):
     if null_count:
         click.echo(f"Filled {null_count} archived/skipped nodes with zero vectors.")
 
-    del conn
     _auto_export()
 
     _output({
@@ -456,7 +476,6 @@ def embed_backfill(force):
 def embed_status():
     """Show embedding coverage statistics."""
     conn = get_connection()
-    create_schema(conn)
 
     result = conn.execute(
         "MATCH (n:Node) "
@@ -492,7 +511,6 @@ def hygiene():
 def hygiene_dedup(ctx):
     """Find potential duplicate nodes."""
     conn = get_connection()
-    create_schema(conn)
     results = find_duplicates(conn)
     if not results:
         click.echo("No duplicates found.")
@@ -508,7 +526,6 @@ def hygiene_dedup(ctx):
 def hygiene_orphans(ctx):
     """Find disconnected nodes (no edges)."""
     conn = get_connection()
-    create_schema(conn)
     results = find_orphans(conn)
     if not results:
         click.echo("No orphan nodes found.")
@@ -523,7 +540,6 @@ def hygiene_orphans(ctx):
 def hygiene_verbs():
     """List all relationship verbs with counts."""
     conn = get_connection()
-    create_schema(conn)
     results = audit_verbs(conn)
     if not results:
         click.echo("No edges in the graph.")
@@ -536,7 +552,6 @@ def hygiene_verbs():
 def hygiene_completeness(ctx):
     """Check edge schema completeness."""
     conn = get_connection()
-    create_schema(conn)
     violations = check_completeness(conn)
     if not violations:
         click.echo("All nodes pass edge completeness checks.")
@@ -552,7 +567,6 @@ def hygiene_completeness(ctx):
 def hygiene_file_paths(ctx):
     """Validate file_path on structural nodes."""
     conn = get_connection()
-    create_schema(conn)
     violations = check_file_paths(conn)
     if not violations:
         click.echo("All file_path checks pass.")
@@ -568,7 +582,6 @@ def hygiene_file_paths(ctx):
 def hygiene_content_drift(ctx):
     """Detect drift between brain content and context files."""
     conn = get_connection()
-    create_schema(conn)
     issues = check_content_drift(conn)
     if not issues:
         click.echo("No content drift detected.")
@@ -584,7 +597,6 @@ def hygiene_content_drift(ctx):
 def hygiene_readiness(ctx):
     """Check operational readiness."""
     conn = get_connection()
-    create_schema(conn)
     violations = check_operational_readiness(conn)
     if ctx.obj.get("json_mode"):
         _output({"status": "clean" if not violations else "violations_found",
@@ -608,7 +620,6 @@ def verify(node_id, stale_days):
     brain verify --stale 14    List stale nodes
     """
     conn = get_connection()
-    create_schema(conn)
 
     if stale_days is not None:
         results = query_stale(conn, stale_days)
@@ -697,7 +708,6 @@ def dream(ctx, dry_run):
         tui_console.print(f"[dim]Conversation ingest failed: {e}[/]")
 
     conn = get_connection()
-    create_schema(conn)
 
     issues = []
     for name, check_fn in [
@@ -729,7 +739,6 @@ def dream(ctx, dry_run):
         last_dream_path = get_brain_dir() / ".last-dream"
         last_dream_path.write_text(str(int(time.time())))
 
-    del conn
 
 
 # --- Viz ---
@@ -738,15 +747,13 @@ def dream(ctx, dry_run):
 @click.option("--port", default=8080, help="Port to serve on")
 def viz(port):
     """Export fresh graph and serve visualization."""
+    import functools
     import http.server
-    import webbrowser
-    import os
     import shutil
+    import webbrowser
 
     conn = get_connection()
-    create_schema(conn)
     path, nodes, edges = export_cytoscape(conn)
-    del conn
     click.echo(f"Exported {nodes} nodes, {edges} edges")
 
     from .config import get_brain_dir, get_viz_source_dir
@@ -759,9 +766,9 @@ def viz(port):
         if viz_source.exists():
             shutil.copytree(viz_source, viz_dest)
 
-    os.chdir(str(brain_dir))
-
-    handler = http.server.SimpleHTTPRequestHandler
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(brain_dir)
+    )
     server = http.server.HTTPServer(("localhost", port), handler)
 
     webbrowser.open(f"http://localhost:{port}/viz/")

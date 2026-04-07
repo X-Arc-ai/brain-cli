@@ -25,6 +25,7 @@ def get_node(conn, node_id):
     result = conn.execute(
         """
         MATCH (n:Node {id: $id})-[e:Edge]->(t:Node)
+        WHERE e.until IS NULL
         RETURN e.verb, e.since, e.until, e.source, e.note,
                t.id AS target_id, t.title AS target_title, t.type AS target_type
         """,
@@ -35,6 +36,7 @@ def get_node(conn, node_id):
     result = conn.execute(
         """
         MATCH (s:Node)-[e:Edge]->(n:Node {id: $id})
+        WHERE e.until IS NULL
         RETURN e.verb, e.since, e.until, e.source, e.note,
                s.id AS source_id, s.title AS source_title, s.type AS source_type
         """,
@@ -54,6 +56,7 @@ def get_context(conn, node_id, depth=1):
     result = conn.execute(
         """
         MATCH (n:Node {id: $id})-[e:Edge]-(connected:Node)
+        WHERE e.until IS NULL
         RETURN DISTINCT connected.id, connected.type, connected.title,
                connected.status, connected.content, connected.status_since,
                connected.updated_at, connected.verified_at,
@@ -82,6 +85,7 @@ def get_context(conn, node_id, depth=1):
         result = conn.execute(
             f"""
             MATCH p = (n:Node {{id: $id}})-[e:Edge* 1..{depth}]-(connected:Node)
+            WHERE ALL(rel IN e WHERE rel.until IS NULL)
             RETURN DISTINCT connected.id, connected.type, connected.title,
                    connected.status, connected.content, connected.status_since,
                    connected.updated_at, connected.verified_at,
@@ -289,6 +293,8 @@ def query_changed_since(conn, date_str):
 
 def query_stale(conn, threshold_days=14):
     """Nodes with freshness > threshold days."""
+    from .utils import compute_staleness_for_node
+
     result = conn.execute(
         """
         MATCH (n:Node)
@@ -300,29 +306,22 @@ def query_stale(conn, threshold_days=14):
         """,
     )
     rows = rows_to_dicts(result)
-    from datetime import datetime, timezone
-    now_dt = datetime.now(timezone.utc)
     stale = []
     for row in rows:
-        updated = row.get("n.updated_at")
-        verified = row.get("n.verified_at")
-        last_touch = verified if (verified and updated and verified > updated) else updated
-        if last_touch is None:
+        level, days = compute_staleness_for_node(
+            row.get("n.updated_at"), row.get("n.verified_at")
+        )
+        if days is None or days < threshold_days:
             continue
-        if isinstance(last_touch, str):
-            last_touch = datetime.fromisoformat(last_touch)
-        if last_touch.tzinfo is None:
-            last_touch = last_touch.replace(tzinfo=timezone.utc)
-        days = (now_dt - last_touch).days
-        if days >= threshold_days:
-            row["days_stale"] = days
-            if days >= 30:
-                row["level"] = "CRITICAL"
-            elif days >= 14:
-                row["level"] = "WARNING"
-            else:
-                row["level"] = "INFO"
-            stale.append(row)
+        row["days_stale"] = days
+        # Map helper levels to the historical CRITICAL/WARNING/INFO labels
+        row["level"] = {
+            "critical": "CRITICAL",
+            "warning": "WARNING",
+            "info": "INFO",
+            "ok": "INFO",
+        }.get(level, "INFO")
+        stale.append(row)
     return stale
 
 
@@ -378,43 +377,57 @@ def get_all_nodes_for_embedding(conn):
     return rows_to_dicts(result)
 
 
-def search_semantic(conn, query, type_filter=None, top_k=10, expand=False):
-    """Semantic search using cosine similarity on stored embeddings."""
-    import math
+def search_semantic(conn, query, type_filter=None, top_k=10, expand=False, max_candidates=2000):
+    """Semantic search using cosine similarity on stored embeddings.
+
+    Server-side filters to non-archived nodes and caps the candidate set.
+    Uses numpy for vectorized cosine similarity (much faster than the pure
+    Python implementation for 1536-dim vectors).
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        raise RuntimeError(
+            "Semantic search requires numpy. Install with: pip install 'brain-cli[embeddings]'"
+        )
+
     from .embeddings import generate_embedding
 
-    query_embedding = generate_embedding(query)
+    query_embedding = np.asarray(generate_embedding(query), dtype=np.float32)
 
     type_clause = "AND n.type = $type" if type_filter else ""
-    params = {}
+    params = {"limit": int(max_candidates)}
     if type_filter:
         params["type"] = type_filter
 
     result = conn.execute(
         f"MATCH (n:Node) "
-        f"WHERE n.content_embedding IS NOT NULL {type_clause} "
+        f"WHERE n.content_embedding IS NOT NULL "
+        f"  AND (n.status <> 'archived' OR n.status IS NULL) "
+        f"  {type_clause} "
         f"RETURN n.id AS id, n.type AS type, n.title AS title, "
         f"  n.status AS status, n.content AS content, "
         f"  n.file_path AS file_path, n.properties AS properties, "
-        f"  n.content_embedding AS embedding",
+        f"  n.content_embedding AS embedding "
+        f"LIMIT $limit",
         parameters=params,
     )
     rows = rows_to_dicts(result)
+    if not rows:
+        return []
 
-    def _cosine_distance(a, b):
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-        if norm_a == 0 or norm_b == 0:
-            return 2.0
-        return 1.0 - dot / (norm_a * norm_b)
+    # Vectorized cosine using numpy
+    embs = np.asarray([r.pop("embedding") for r in rows], dtype=np.float32)
+    q_norm = np.linalg.norm(query_embedding)
+    e_norms = np.linalg.norm(embs, axis=1)
+    denom = q_norm * e_norms
+    safe_denom = np.where(denom == 0, 1.0, denom)
+    sims = embs.dot(query_embedding) / safe_denom
+    distances = 1.0 - sims
+    distances = np.where(denom == 0, 2.0, distances)
 
-    for row in rows:
-        emb = row.pop("embedding", None)
-        if emb:
-            row["distance"] = round(_cosine_distance(query_embedding, emb), 6)
-        else:
-            row["distance"] = 2.0
+    for row, dist in zip(rows, distances):
+        row["distance"] = round(float(dist), 6)
 
     rows.sort(key=lambda r: r["distance"])
     rows = rows[:top_k]

@@ -83,63 +83,64 @@ EDGE_RULES = [
 def check_completeness(conn):
     """Check edge schema completeness -- every node type has required edges.
 
-    Returns a list of violations: nodes missing required edges.
+    Issues a single parameterized query per rule using NOT EXISTS subqueries
+    to find nodes missing required outgoing/incoming/any edges.
     """
     violations = []
 
     for rule in EDGE_RULES:
         node_type = rule["node_type"]
         verbs = rule["verbs"]
+        target_types = rule.get("target_types")
+        check_kind = rule["check"]
         description = rule["description"]
 
-        # Get all non-archived nodes of this type
-        result = conn.execute(
-            "MATCH (n:Node) WHERE n.type = $type AND n.status <> 'archived' RETURN n.id, n.title",
-            parameters={"type": node_type},
-        )
-        nodes = rows_to_dicts(result)
+        # Build the type-filter clause as a parameterized predicate
+        type_predicate = "AND t.type IN $target_types " if target_types else ""
 
-        # Build target type filter from rule
-        target_types = rule.get("target_types")
-        type_filter = ""
+        if check_kind == "outgoing":
+            cypher = f"""
+                MATCH (n:Node)
+                WHERE n.type = $type AND n.status <> 'archived'
+                  AND NOT EXISTS {{
+                    MATCH (n)-[e:Edge]->(t:Node)
+                    WHERE e.verb IN $verbs AND e.until IS NULL {type_predicate}
+                  }}
+                RETURN n.id AS id, n.title AS title
+            """
+        elif check_kind == "incoming":
+            cypher = f"""
+                MATCH (n:Node)
+                WHERE n.type = $type AND n.status <> 'archived'
+                  AND NOT EXISTS {{
+                    MATCH (t:Node)-[e:Edge]->(n)
+                    WHERE e.verb IN $verbs AND e.until IS NULL {type_predicate}
+                  }}
+                RETURN n.id AS id, n.title AS title
+            """
+        else:  # "any"
+            cypher = f"""
+                MATCH (n:Node)
+                WHERE n.type = $type AND n.status <> 'archived'
+                  AND NOT EXISTS {{
+                    MATCH (n)-[e:Edge]-(t:Node)
+                    WHERE e.verb IN $verbs AND e.until IS NULL {type_predicate}
+                  }}
+                RETURN n.id AS id, n.title AS title
+            """
+
+        params = {"type": node_type, "verbs": verbs}
         if target_types:
-            type_list = ", ".join(f"'{t}'" for t in target_types)
-            type_filter = f" AND t.type IN [{type_list}]"
+            params["target_types"] = target_types
 
-        for node in nodes:
-            node_id = node["n.id"]
-            has_required = False
-
-            if rule["check"] in ("outgoing", "any"):
-                # Check outgoing edges with matching verbs and target types
-                verb_filter = " OR ".join(f"e.verb = '{v}'" for v in verbs)
-                r = conn.execute(
-                    f"MATCH (n:Node {{id: $id}})-[e:Edge]->(t:Node) WHERE ({verb_filter}){type_filter} AND e.until IS NULL RETURN count(*) AS cnt",
-                    parameters={"id": node_id},
-                )
-                rows = rows_to_dicts(r)
-                if rows and rows[0]["cnt"] > 0:
-                    has_required = True
-
-            if not has_required and rule["check"] in ("incoming", "any"):
-                # Check incoming edges with matching verbs and target types
-                verb_filter = " OR ".join(f"e.verb = '{v}'" for v in verbs)
-                r = conn.execute(
-                    f"MATCH (t:Node)-[e:Edge]->(n:Node {{id: $id}}) WHERE ({verb_filter}){type_filter} AND e.until IS NULL RETURN count(*) AS cnt",
-                    parameters={"id": node_id},
-                )
-                rows = rows_to_dicts(r)
-                if rows and rows[0]["cnt"] > 0:
-                    has_required = True
-
-            if not has_required:
-                violations.append({
-                    "node_id": node_id,
-                    "node_title": node["n.title"],
-                    "node_type": node_type,
-                    "rule": description,
-                    "missing_verbs": verbs,
-                })
+        for row in rows_to_dicts(conn.execute(cypher, parameters=params)):
+            violations.append({
+                "node_id": row["id"],
+                "node_title": row["title"],
+                "node_type": node_type,
+                "rule": description,
+                "missing_verbs": verbs,
+            })
 
     return violations
 
@@ -306,88 +307,64 @@ def check_operational_readiness(conn):
     - Or it shouldn't be in that status
 
     Applies to goals (active/in_progress/pending) and pending decisions.
+
+    Single parameterized query per category. Goals failing all three checks
+    (outgoing decomposition, incoming decomposition, blocker edges) are
+    flagged in one pass.
     """
     violations = []
 
-    # Goals: must have tasks or blockers
-    goal_result = conn.execute("""
+    # Goals: missing all three of {outgoing decomp, incoming decomp, blockers}
+    goal_query = """
         MATCH (g:Node)
         WHERE g.type = 'goal'
           AND g.status IN ['active', 'in_progress', 'pending']
+          AND NOT EXISTS {
+            MATCH (g)-[e:Edge]->(t:Node)
+            WHERE e.verb IN $decomp_verbs AND e.until IS NULL AND t.type = 'task'
+          }
+          AND NOT EXISTS {
+            MATCH (t:Node)-[e:Edge]->(g)
+            WHERE e.verb IN $decomp_verbs_inv AND e.until IS NULL AND t.type = 'task'
+          }
+          AND NOT EXISTS {
+            MATCH (g)-[e:Edge]-(b:Node)
+            WHERE e.verb IN $blocker_verbs AND e.until IS NULL
+          }
         RETURN g.id AS id, g.title AS title, g.status AS status
-    """)
-    goals = rows_to_dicts(goal_result)
+    """
+    for row in rows_to_dicts(conn.execute(goal_query, parameters={
+        "decomp_verbs": list(DECOMPOSITION_VERBS),
+        "decomp_verbs_inv": list(DECOMPOSITION_VERBS_INVERSE),
+        "blocker_verbs": list(BLOCKER_VERBS),
+    })):
+        violations.append({
+            "node_id": row["id"],
+            "node_type": "goal",
+            "title": row["title"],
+            "status": row["status"],
+            "issue": "Active goal with no tasks and no blockers",
+            "action": "Decompose into tasks, add blockers, or change status",
+        })
 
-    decomp_verbs = " OR ".join(f"e.verb = '{v}'" for v in DECOMPOSITION_VERBS)
-    decomp_verbs_inv = " OR ".join(f"e.verb = '{v}'" for v in DECOMPOSITION_VERBS_INVERSE)
-    blocker_verbs = " OR ".join(f"e.verb = '{v}'" for v in BLOCKER_VERBS)
-
-    for row in goals:
-        gid = row["id"]
-
-        # Check for outgoing decomposition edges (goal -> task)
-        r = conn.execute(
-            f"MATCH (g:Node {{id: $id}})-[e:Edge]->(t:Node) "
-            f"WHERE ({decomp_verbs}) AND e.until IS NULL AND t.type = 'task' "
-            f"RETURN count(*) AS cnt",
-            parameters={"id": gid}
-        )
-        has_tasks_out = rows_to_dicts(r)[0]["cnt"]
-
-        # Check for incoming decomposition edges (task -> goal)
-        r = conn.execute(
-            f"MATCH (t:Node)-[e:Edge]->(g:Node {{id: $id}}) "
-            f"WHERE ({decomp_verbs_inv}) AND e.until IS NULL AND t.type = 'task' "
-            f"RETURN count(*) AS cnt",
-            parameters={"id": gid}
-        )
-        has_tasks_in = rows_to_dicts(r)[0]["cnt"]
-
-        # Check for blocker edges
-        r = conn.execute(
-            f"MATCH (g:Node {{id: $id}})-[e:Edge]-(b:Node) "
-            f"WHERE ({blocker_verbs}) AND e.until IS NULL "
-            f"RETURN count(*) AS cnt",
-            parameters={"id": gid}
-        )
-        has_blockers = rows_to_dicts(r)[0]["cnt"]
-
-        if has_tasks_out == 0 and has_tasks_in == 0 and has_blockers == 0:
-            violations.append({
-                "node_id": gid,
-                "node_type": "goal",
-                "title": row["title"],
-                "status": row["status"],
-                "issue": "Active goal with no tasks and no blockers",
-                "action": "Decompose into tasks, add blockers, or change status"
-            })
-
-    # Decisions: pending decisions should have impact edges
-    decision_result = conn.execute("""
+    # Decisions: pending decisions with no connected (active) nodes
+    decision_query = """
         MATCH (d:Node)
         WHERE d.type = 'decision' AND d.status = 'pending'
+          AND NOT EXISTS {
+            MATCH (d)-[e:Edge]-(t:Node)
+            WHERE e.until IS NULL
+          }
         RETURN d.id AS id, d.title AS title
-    """)
-    decisions = rows_to_dicts(decision_result)
-
-    for row in decisions:
-        did = row["id"]
-        r = conn.execute(
-            "MATCH (d:Node {id: $id})-[e:Edge]-(t:Node) "
-            "WHERE e.until IS NULL "
-            "RETURN count(*) AS cnt",
-            parameters={"id": did}
-        )
-        has_impact = rows_to_dicts(r)[0]["cnt"]
-
-        if has_impact == 0:
-            violations.append({
-                "node_id": did,
-                "node_type": "decision",
-                "title": row["title"],
-                "status": "pending",
-                "issue": "Pending decision with no connected nodes",
-                "action": "Link to what this decision affects or archive"
-            })
+    """
+    for row in rows_to_dicts(conn.execute(decision_query)):
+        violations.append({
+            "node_id": row["id"],
+            "node_type": "decision",
+            "title": row["title"],
+            "status": "pending",
+            "issue": "Pending decision with no connected nodes",
+            "action": "Link to what this decision affects or archive",
+        })
 
     return violations
