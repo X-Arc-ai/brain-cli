@@ -101,24 +101,99 @@ brain config add-type feature operational
 
 ## CLI Reference
 
+### Top-level commands
+
+| Command | Purpose |
+|---|---|
+| `brain init` | Bootstrap brain for a project |
+| `brain get <id>` | Show a single node + its edges |
+| `brain scan <id>` | 3-hop topology view |
+| `brain context <id>` | Node + neighbors with content |
+| `brain search "<term>"` | Keyword search across title/content/id |
+| `brain search-semantic "<term>"` | Vector search (requires `[embeddings]`) |
+| `brain signals` | Compute all freshness/decay signals |
+| `brain stats` | Counts by type |
+| `brain verify <id>` | Mark node as verified |
+| `brain dream` | Run full maintenance cycle |
+| `brain viz` | Open browser visualization |
+| `brain export --format <fmt>` | Export graph (`cytoscape`, `json`, or `batch`) |
+
+### Write group
+
+- `brain write node --json-data '<json>'` -- create or update a node
+- `brain write edge --json-data '<json>'` -- create or update an edge
+- `brain write batch --file <path>` -- bulk import operations
+
+### Delete group
+
+- `brain delete node --id <id>` -- archive a node
+- `brain delete edge --from <id> --to <id> --verb '<verb>'` -- end an edge
+
+### Query group
+
+- `brain query cypher "<cypher>"` -- raw Cypher (use `--read-only` for safety)
+- `brain query depends-on <id>` -- what this node depends on
+- `brain query blast-radius <id>` -- what depends on this node
+- `brain query chain <id>` -- full dependency chain
+- `brain query changed-since <date>` -- nodes modified since
+- `brain query stale [--threshold N]` -- nodes past threshold (default 14 days)
+- `brain query person <id>` -- full person assessment subgraph
+
+### Embed group
+
+- `brain embed backfill` -- generate embeddings for nodes missing them
+- `brain embed status` -- coverage report
+
+### Hygiene group
+
+- `brain hygiene dedup` -- find potential duplicates
+- `brain hygiene orphans` -- disconnected nodes
+- `brain hygiene verbs` -- verb usage audit
+- `brain hygiene completeness` -- schema rule violations
+- `brain hygiene file-paths` -- broken / missing file_path checks
+- `brain hygiene content-drift` -- brain content vs source file drift
+- `brain hygiene readiness` -- operational readiness checks
+
+### Config group
+
+- `brain config show` -- show current config
+- `brain config add-type <type_name> <tier>` -- register a custom type (tier: `structural`, `operational`, or `temporal`)
+
+### JSON schemas
+
+**Node**:
+
+```json
+{
+  "id": "my_node_id",
+  "type": "project",
+  "title": "Display name",
+  "status": "active",
+  "content": "Optional markdown content",
+  "file_path": "optional/relative/path.md",
+  "properties": {"any": "nested object"}
+}
 ```
-brain init                           Bootstrap graph from your project
-brain scan <id>                      3-hop topology map (start here)
-brain context <id>                   Deep dive on a node + neighbors
-brain search "<term>"                Find nodes by keyword
-brain search-semantic "<query>"      Find nodes by meaning (requires OpenAI)
-brain signals                        What needs attention
-brain stats                          Graph statistics
-brain write node --json-data '{}'    Create or update a node
-brain write edge --json-data '{}'    Create or update an edge
-brain write batch --json-data '[]'   Batch operations
-brain verify <id>                    Confirm node is still accurate
-brain dream                          Run maintenance cycle
-brain hygiene completeness           Check required edges
-brain config show                    Current configuration
-brain viz                            Open graph visualization
-brain export --format batch          Backup (replayable)
+
+**Edge** (note: field names are `from`, `to`, `verb` -- not `from_id`/`source`):
+
+```json
+{
+  "from": "source_node_id",
+  "to": "target_node_id",
+  "verb": "depends on",
+  "since": "2026-04-07",
+  "source": "human",
+  "note": "optional context"
+}
 ```
+
+### Global flags
+
+`--json-output` is a **global** flag and must come **before** the subcommand:
+
+- `brain --json-output stats` (correct)
+- `brain stats --json-output` (errors with `No such option`)
 
 ---
 
