@@ -20,6 +20,22 @@ from .hygiene import (find_duplicates, find_orphans, audit_verbs, check_complete
 from .exporter import export_cytoscape, export_json, export_batch
 
 
+def _handle_errors(fn):
+    """Decorator: convert ValueError/JSONDecodeError to clean CLI errors."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except json.JSONDecodeError as e:
+            raise click.ClickException(f"Invalid JSON: {e}")
+        except ValueError as e:
+            raise click.ClickException(str(e))
+
+    return wrapper
+
+
 def _output(data):
     """Print JSON output."""
     click.echo(json.dumps(data, indent=2, default=str))
@@ -76,6 +92,7 @@ def write():
 @write.command("node")
 @click.option("--json-data", "json_str", required=True, help="Node data as JSON string")
 @click.option("--maintenance", is_flag=True, help="Allow status+properties updates on immutable types")
+@_handle_errors
 def write_node(json_str, maintenance):
     """Create or update a node."""
     data = json.loads(json_str)
@@ -91,6 +108,7 @@ def write_node(json_str, maintenance):
 
 @write.command("edge")
 @click.option("--json-data", "json_str", required=True, help="Edge data as JSON string")
+@_handle_errors
 def write_edge(json_str):
     """Create or update an edge."""
     data = json.loads(json_str)
@@ -107,6 +125,7 @@ def write_edge(json_str):
 @write.command("batch")
 @click.option("--json-data", "json_str", default=None, help="Batch operations as JSON array string")
 @click.option("--file", "file_path", default=None, type=click.Path(exists=True), help="Batch operations from JSON file")
+@_handle_errors
 def write_batch(json_str, file_path):
     """Execute a batch of operations."""
     if file_path:
@@ -137,6 +156,7 @@ def delete():
 
 @delete.command("node")
 @click.option("--id", "node_id", required=True, help="Node ID to archive")
+@_handle_errors
 def delete_node(node_id):
     """Soft-delete a node (set status to archived)."""
     conn = get_connection()
@@ -149,6 +169,7 @@ def delete_node(node_id):
 @click.option("--from", "from_id", required=True, help="Source node ID")
 @click.option("--to", "to_id", required=True, help="Target node ID")
 @click.option("--verb", required=True, help="Relationship verb")
+@_handle_errors
 def delete_edge_cmd(from_id, to_id, verb):
     """End a relationship (set until = now)."""
     conn = get_connection()
