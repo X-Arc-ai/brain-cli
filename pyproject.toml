@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brain-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Knowledge graph CLI for structured memory in Claude Code"
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,8 +30,6 @@ dependencies = [
 
 [project.optional-dependencies]
 embeddings = ["openai>=1.0.0", "numpy>=1.24"]
-memory = ["agent-memory @ git+https://github.com/X-Arc-ai/memory.git"]
-all = ["brain-cli[embeddings,memory]"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
