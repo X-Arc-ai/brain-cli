@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="brain" width="700">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/hero.svg" alt="brain" width="700">
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@ This loop is enforced by hooks that fire automatically. You don't need to
 remember to use the brain. It's architecturally guaranteed.
 
 <p align="center">
-  <img src="assets/demo-scan.svg" alt="brain scan" width="640">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-scan.svg" alt="brain scan" width="640">
 </p>
 
 ---
@@ -45,7 +45,7 @@ Brain stores **entities** (projects, people, goals, tasks, blockers, decisions, 
 and **temporal signals** (what's stale, what's stuck, what just shipped).
 
 <p align="center">
-  <img src="assets/demo-signals.svg" alt="brain signals" width="640">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-signals.svg" alt="brain signals" width="640">
 </p>
 
 ---
@@ -57,7 +57,7 @@ This is the actual brain of CCL, the AI agent that built this tool.
 companies, projects, and people.
 
 <p align="center">
-  <img src="assets/brain-production.png" alt="CCL's production brain -- 320 nodes, 975 edges" width="800">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/brain-production.png" alt="CCL's production brain -- 320 nodes, 975 edges" width="800">
 </p>
 
 <p align="center">
