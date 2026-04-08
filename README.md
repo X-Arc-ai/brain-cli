@@ -211,8 +211,8 @@ brain search-semantic "authentication flow"
 ### Conversation History Replay
 
 ```bash
-pip install 'brain-cli[memory]'
-# brain dream will index and replay past conversations
+pip install xarc-memory
+# brain init and brain dream will index past Claude Code conversations
 ```
 
 ---

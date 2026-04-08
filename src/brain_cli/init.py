@@ -104,7 +104,7 @@ def _step_2_index_conversations():
         console.print("[green]v[/] Conversation history indexed")
     except ImportError:
         console.print("[dim]Skipping conversation history "
-                      "(install with: pip install agent-memory from git+https://github.com/X-Arc-ai/memory.git)[/]")
+                      "(install with: pip install xarc-memory)[/]")
     except Exception as e:
         console.print(f"[dim]Conversation indexing failed: {e}[/]")
 
