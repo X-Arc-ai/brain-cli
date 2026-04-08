@@ -12,7 +12,7 @@
 ## Quick Start
 
 ```bash
-pip install git+https://github.com/X-Arc-ai/brain-cli.git
+pip install xarc-brain
 cd your-project
 brain init
 ```
@@ -202,7 +202,7 @@ brain config add-type feature operational
 ### Semantic Search
 
 ```bash
-pip install 'brain-cli[embeddings]'
+pip install 'xarc-brain[embeddings]'
 # Set OPENAI_API_KEY in your environment
 brain embed backfill
 brain search-semantic "authentication flow"
@@ -245,7 +245,7 @@ your-project/
 
 **Nothing leaves your machine.** No cloud services. No telemetry. The only
 optional external call is OpenAI for semantic search embeddings, and that's
-opt-in via `pip install 'brain-cli[embeddings]'`.
+opt-in via `pip install 'xarc-brain[embeddings]'`.
 
 ---
 

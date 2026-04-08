@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "brain-cli"
+name = "xarc-brain"
 version = "0.2.1"
 description = "Knowledge graph CLI for structured memory in Claude Code"
 readme = "README.md"

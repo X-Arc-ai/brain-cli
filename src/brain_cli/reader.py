@@ -388,7 +388,7 @@ def search_semantic(conn, query, type_filter=None, top_k=10, expand=False, max_c
         import numpy as np
     except ImportError:
         raise RuntimeError(
-            "Semantic search requires numpy. Install with: pip install 'brain-cli[embeddings]'"
+            "Semantic search requires numpy. Install with: pip install 'xarc-brain[embeddings]'"
         )
 
     from .embeddings import generate_embedding

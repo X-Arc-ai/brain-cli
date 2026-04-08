@@ -17,7 +17,7 @@ def _get_client():
         except ImportError:
             raise RuntimeError(
                 "OpenAI package not installed. "
-                "Install with: pip install 'brain-cli[embeddings]'"
+                "Install with: pip install 'xarc-brain[embeddings]'"
             )
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
