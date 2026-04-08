@@ -703,7 +703,7 @@ def config_show():
     click.echo(f"Config file: {config_path}")
     if config_path.exists():
         click.echo(config_path.read_text())
-    click.echo(f"\nEffective type tiers:")
+    click.echo("\nEffective type tiers:")
     for tier, types in get_type_tiers().items():
         click.echo(f"  {tier}: {sorted(types)}")
 
