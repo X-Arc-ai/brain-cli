@@ -66,11 +66,19 @@ def cli(ctx, json_mode):
 @cli.command("init")
 @click.option("--project", type=click.Path(exists=True), help="Project root directory")
 @click.option("--skip-memory", is_flag=True, help="Skip conversation history indexing")
-@click.option("--skip-hooks", is_flag=True, help="Skip Claude Code hook installation")
+@click.option("--skip-hooks", is_flag=True, help="Skip agent integration installation")
 @click.option("--skip-viz", is_flag=True, help="Skip opening visualization")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all prompts (non-interactive)")
-def init_cmd(project, skip_memory, skip_hooks, skip_viz, yes):
+@click.option("--runtime", type=click.Choice(["claude-code", "openclaw", "headless"]),
+              default=None, help="Agent runtime to configure (default: claude-code)")
+@click.option("--headless", is_flag=True, help="Shorthand for --runtime headless --yes --skip-memory --skip-viz")
+def init_cmd(project, skip_memory, skip_hooks, skip_viz, yes, runtime, headless):
     """Initialize brain for a project. Analyzes codebase, proposes graph, installs hooks."""
+    if headless:
+        runtime = "headless"
+        yes = True
+        skip_memory = True
+        skip_viz = True
     from .init import run_init
     run_init(
         project_root=project,
@@ -78,6 +86,7 @@ def init_cmd(project, skip_memory, skip_hooks, skip_viz, yes):
         skip_hooks=skip_hooks,
         skip_viz=skip_viz,
         yes=yes,
+        runtime=runtime,
     )
 
 

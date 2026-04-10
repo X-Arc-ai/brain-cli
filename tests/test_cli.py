@@ -291,3 +291,59 @@ class TestGetCommand:
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert parsed["id"] == "get_n2"
+
+
+# ---------------------------------------------------------------------------
+# init --runtime / --headless
+# ---------------------------------------------------------------------------
+
+class TestInitRuntimeFlag:
+    def test_headless_flag_sets_runtime(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["init", "--headless", "--project", str(tmp_path)])
+        assert result.exit_code == 0
+        config = json.loads((tmp_path / ".brain" / "config.json").read_text())
+        assert config["runtime"] == "headless"
+
+    def test_headless_skips_claude_artifacts(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["init", "--headless", "--project", str(tmp_path)])
+        assert result.exit_code == 0
+        assert not (tmp_path / "CLAUDE.md").exists()
+        assert not (tmp_path / ".claude").exists()
+
+    def test_runtime_openclaw_skips_claude_artifacts(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "init", "--runtime", "openclaw", "--yes",
+            "--skip-memory", "--skip-viz",
+            "--project", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert not (tmp_path / "CLAUDE.md").exists()
+        assert not (tmp_path / ".claude").exists()
+        config = json.loads((tmp_path / ".brain" / "config.json").read_text())
+        assert config["runtime"] == "openclaw"
+
+    def test_no_flags_preserves_claude_code_default(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "init", "--yes", "--skip-viz", "--skip-memory",
+            "--project", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        config = json.loads((tmp_path / ".brain" / "config.json").read_text())
+        assert config["runtime"] == "claude-code"
+
+    def test_skip_hooks_overrides_runtime(self, tmp_path):
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "init", "--runtime", "openclaw", "--skip-hooks", "--yes",
+            "--skip-memory", "--skip-viz",
+            "--project", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        # runtime is stored but no skills installed
+        config = json.loads((tmp_path / ".brain" / "config.json").read_text())
+        assert config["runtime"] == "openclaw"
+        assert not (tmp_path / "CLAUDE.md").exists()

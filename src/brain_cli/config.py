@@ -171,6 +171,18 @@ def get_file_path_exceptions() -> set[str]:
         return set()
 
 
+def get_runtime() -> str:
+    """Get the configured agent runtime (default: claude-code)."""
+    config_path = get_brain_dir() / "config.json"
+    if not config_path.exists():
+        return "claude-code"
+    try:
+        with open(config_path) as f:
+            return json.load(f).get("runtime", "claude-code")
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return "claude-code"
+
+
 # --- Utility ---
 
 def now():

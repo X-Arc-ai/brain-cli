@@ -11,6 +11,7 @@ from brain_cli.config import (
     get_all_types,
     get_tier_for_type,
     get_immutable_types,
+    get_runtime,
     VALID_STATUSES,
     set_brain_dir,
     DEFAULT_TYPE_TIERS,
@@ -124,6 +125,37 @@ class TestGetImmutableTypes:
 
     def test_project_is_not_immutable(self, brain_dir):
         assert "project" not in get_immutable_types()
+
+
+# ---------------------------------------------------------------------------
+# VALID_STATUSES
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# get_runtime
+# ---------------------------------------------------------------------------
+
+class TestGetRuntime:
+    def test_default_when_no_config(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        if config_path.exists():
+            config_path.unlink()
+        assert get_runtime() == "claude-code"
+
+    def test_reads_runtime_from_config(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        config_path.write_text(json.dumps({"runtime": "openclaw"}))
+        assert get_runtime() == "openclaw"
+
+    def test_default_when_field_missing(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        config_path.write_text(json.dumps({"type_tiers": {}}))
+        assert get_runtime() == "claude-code"
+
+    def test_reads_headless(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        config_path.write_text(json.dumps({"runtime": "headless"}))
+        assert get_runtime() == "headless"
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,10 @@
-"""brain init -- Zero-to-graph onboarding."""
+"""brain init -- Zero-to-graph onboarding.
+
+Supports multiple agent runtimes via --runtime flag:
+  claude-code (default): Installs CLAUDE.md, hooks, and brain-dream skill
+  openclaw: Installs brain-dream skill to ~/.openclaw/skills/
+  headless: Database + config only, no agent integration
+"""
 
 import json
 import os
@@ -34,8 +40,12 @@ _PROJECT_MANIFESTS = [
 ]
 
 
-def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=False, yes=False):
+def run_init(project_root=None, skip_memory=False, skip_hooks=False,
+             skip_viz=False, yes=False, runtime=None):
     """Run the full brain init flow."""
+    if runtime is None:
+        runtime = "claude-code"
+
     root = Path(project_root) if project_root else Path.cwd()
 
     # CRITICAL: Create .brain/ in project root and override config BEFORE
@@ -51,7 +61,7 @@ def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=Fa
         border_style="#4ade80",
     ))
 
-    _step_1_create_dirs(brain_dir)
+    _step_1_create_dirs(brain_dir, runtime=runtime)
 
     if not skip_memory:
         _step_2_index_conversations()
@@ -61,14 +71,17 @@ def run_init(project_root=None, skip_memory=False, skip_hooks=False, skip_viz=Fa
     if proposals:
         _step_4_show_proposals(proposals, skip_viz, yes=yes)
 
-    if not skip_hooks:
-        _step_5_install_behaviors(root, brain_dir, yes=yes)
+    if not skip_hooks and runtime != "headless":
+        if runtime == "openclaw":
+            _step_5_install_openclaw(brain_dir)
+        else:
+            _step_5_install_claude_code(root, brain_dir, yes=yes)
 
     console.print(f"\n[#4ade80]Brain initialized.[/] "
                   f"Your graph is at [dim]{brain_dir}[/]")
 
 
-def _step_1_create_dirs(brain_dir):
+def _step_1_create_dirs(brain_dir, runtime="claude-code"):
     """Create brain directory structure."""
     brain_dir.mkdir(parents=True, exist_ok=True)
     (brain_dir / "db").mkdir(exist_ok=True)
@@ -84,10 +97,16 @@ def _step_1_create_dirs(brain_dir):
     if not config_path.exists():
         brain_path = shutil.which("brain") or ""
         config_path.write_text(json.dumps({
+            "runtime": runtime,
             "type_tiers": {},
             "file_path_exceptions": [],
             "brain_path": brain_path,
         }, indent=2))
+    else:
+        # Update runtime in existing config
+        cfg = json.loads(config_path.read_text())
+        cfg["runtime"] = runtime
+        config_path.write_text(json.dumps(cfg, indent=2))
 
     # Eagerly initialize the DB so the schema is in place after init returns.
     get_connection()
@@ -222,8 +241,8 @@ def _step_4_show_proposals(proposals, skip_viz, yes=False):
         console.print("[dim]Skipped. You can run brain init again anytime.[/]")
 
 
-def _step_5_install_behaviors(root, brain_dir, yes=False):
-    """Install CLAUDE.md, hooks, and brain-dream skill."""
+def _step_5_install_claude_code(root, brain_dir, yes=False):
+    """Install CLAUDE.md, hooks, and brain-dream skill for Claude Code."""
     claude_dir = root / ".claude"
 
     if not claude_dir.exists():
@@ -323,6 +342,24 @@ def _install_dream_skill():
         return
 
     skill_dest = Path.home() / ".claude" / "skills" / "brain-dream"
+    skill_dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(skill_source, skill_dest / "SKILL.md")
+
+
+def _step_5_install_openclaw(brain_dir):
+    """Install brain-dream skill for OpenClaw."""
+    _install_dream_skill_openclaw()
+    console.print("[green]v[/] OpenClaw skill installed")
+
+
+def _install_dream_skill_openclaw():
+    """Install brain-dream skill to ~/.openclaw/skills/."""
+    data_dir = get_data_dir()
+    skill_source = data_dir / "skills" / "brain-dream" / "SKILL.md"
+    if not skill_source.exists():
+        return
+
+    skill_dest = Path.home() / ".openclaw" / "skills" / "brain-dream"
     skill_dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(skill_source, skill_dest / "SKILL.md")
 

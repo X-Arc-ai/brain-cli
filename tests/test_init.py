@@ -1,4 +1,4 @@
-"""Tests for brain_cli.init -- slugify, dir creation, project analysis."""
+"""Tests for brain_cli.init -- slugify, dir creation, project analysis, runtime."""
 
 import json
 import subprocess
@@ -7,7 +7,10 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from brain_cli.init import _slugify, _step_1_create_dirs, _step_3_analyze_project
+from brain_cli.init import (
+    _slugify, _step_1_create_dirs, _step_3_analyze_project,
+    _install_dream_skill, _install_dream_skill_openclaw,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -187,3 +190,59 @@ class TestStep3AnalyzeProject:
         project_titles = [p["title"] for p in proposals
                           if p.get("op") == "create_node" and p.get("type") == "project"]
         assert "my-js-package" in project_titles
+
+
+# ---------------------------------------------------------------------------
+# _step_1_create_dirs -- runtime config
+# ---------------------------------------------------------------------------
+
+class TestStep1RuntimeConfig:
+    def test_config_has_runtime_field(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        if config_path.exists():
+            config_path.unlink()
+        _step_1_create_dirs(brain_dir, runtime="openclaw")
+        data = json.loads(config_path.read_text())
+        assert data["runtime"] == "openclaw"
+
+    def test_config_defaults_to_claude_code(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        if config_path.exists():
+            config_path.unlink()
+        _step_1_create_dirs(brain_dir)
+        data = json.loads(config_path.read_text())
+        assert data["runtime"] == "claude-code"
+
+    def test_existing_config_updated_with_runtime(self, brain_dir):
+        config_path = brain_dir / "config.json"
+        config_path.write_text(json.dumps({"type_tiers": {"custom": ["foo"]}}))
+        _step_1_create_dirs(brain_dir, runtime="headless")
+        data = json.loads(config_path.read_text())
+        assert data["runtime"] == "headless"
+        assert data["type_tiers"] == {"custom": ["foo"]}  # preserved
+
+
+# ---------------------------------------------------------------------------
+# Skill installation -- OpenClaw vs Claude Code
+# ---------------------------------------------------------------------------
+
+class TestOpenClawSkillInstall:
+    def test_installs_dream_skill_to_openclaw_dir(self, brain_dir, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        _install_dream_skill_openclaw()
+
+        skill_path = fake_home / ".openclaw" / "skills" / "brain-dream" / "SKILL.md"
+        assert skill_path.exists()
+
+    def test_claude_code_skill_goes_to_claude_dir(self, brain_dir, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        _install_dream_skill()
+
+        skill_path = fake_home / ".claude" / "skills" / "brain-dream" / "SKILL.md"
+        assert skill_path.exists()
