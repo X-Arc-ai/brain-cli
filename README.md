@@ -3,72 +3,141 @@
 </p>
 
 <p align="center">
-  <strong>Give your AI coding agent a knowledge graph that compounds.</strong><br>
-  Entities, relationships, signals. All local. Zero config.
+  <strong>Persistent memory for your AI coding agent.</strong><br>
+  A local graph your agent maintains. Nothing leaves your machine.
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pypi/v/xarc-brain?color=4ade80&label=pypi" alt="PyPI"></a>
+  <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pypi/pyversions/xarc-brain?color=4ade80" alt="Python versions"></a>
+  <a href="https://github.com/X-Arc-ai/brain-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-4ade80" alt="License"></a>
+  <a href="https://x-arc.ai"><img src="https://img.shields.io/badge/by-X--Arc-4ade80" alt="X-Arc"></a>
 </p>
 
 ---
 
-## Quick Start
+## Your agent starts every session from zero.
+
+Every conversation begins with no memory of the last one. The task that was in review last week. The decision that got made last month. The thing that was supposed to ship yesterday. Your agent knew about all of it at some point. Now it doesn't.
+
+The usual workarounds have limits. Context files go stale. Pasting old conversations into the prompt burns the context budget before the agent can think. Structured rules like "always check this folder first" get forgotten by turn three.
+
+The problem isn't the model. It's that there's no shared state between you and the agent that survives a session boundary.
+
+Brain is that state.
+
+---
+
+## What it is
+
+A local database your agent writes to while it works. Not notes. Not a vector search. A graph.
+
+Nodes live in three tiers:
+
+- **Structural.** Long-lived entities. Default types: `project`, `person`. Replace or extend to fit what you track. If your work revolves around services, repositories, research topics, or anything else, register those types and use them instead.
+- **Operational.** Active work. Default types: `goal`, `task`, `decision`, `blocker`.
+- **Temporal.** Immutable records of what already happened. Default types: `event`, `observation`, `status_change`.
+
+Nodes connect with named relationships. One owns another, one blocks another, one supersedes another. The graph stores who owns what, what depends on what, and what has already been decided. Querying pulls full chains in a single call.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-scan.svg" alt="brain scan output" width="640">
+</p>
+
+That's the engine. It's a small engine. Graph tools have existed for decades and most of them are abandoned, for the same two reasons: nobody wants to maintain the graph manually, and nobody knows what to query it for. Brain's two differences are the things that address those reasons directly.
+
+---
+
+## Signals
+
+Once you have a structured graph, you can compute over it without having to remember what to look for. Brain ships with five built-in signals:
+
+- **Stale.** Nodes that haven't been updated in 7, 14, or 30+ days.
+- **Velocity zero.** Work items stuck in a non-terminal state past their threshold.
+- **Dependency changed.** An upstream node moved since a downstream node was last verified.
+- **Recently completed.** Items that just finished. Useful for checking what they unblock.
+- **Recurring overdue.** Recurring activities past their frequency.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-signals.svg" alt="brain signals output" width="640">
+</p>
+
+`brain signals` returns all five in one command. It's the query you don't have to remember to run.
+
+---
+
+## Hooks
+
+Memory systems usually fail for a reason that has nothing to do with the database: the agent forgets to use it.
+
+Brain ships with hooks that run automatically inside Claude Code:
+
+- **Before every prompt.** Reminds the agent to scan the graph for context.
+- **After every response.** Reminds it to write back what changed.
+- **At session end.** Blocks the session if the cognitive loop was skipped.
+- **Every 24 hours.** Triggers `brain dream`. Full maintenance: dedup, orphans, signals, replay.
+
+Because the hooks run automatically, the agent doesn't have to remember to use brain. It can't skip it.
+
+---
+
+## Install
+
+### 1. Install the engine
 
 ```bash
 pip install xarc-brain
+```
+
+Works anywhere with Python. This is the CLI and the database runtime.
+
+### 2. Wire it to your AI coding tool
+
+**Claude Code (full native integration).** Brain's cognitive-loop hooks, skills, and CLAUDE.md instructions are packaged as a Claude Code plugin:
+
+```bash
+claude plugin marketplace add X-Arc-ai/brain-plugin
+claude plugin install brain@x-arc
+cd your-project
+brain init --yes
+```
+
+The plugin installs the hooks that make your agent scan the graph before responding and write back after, automatically, every session.
+
+**Other coding agents.** The engine works as a plain CLI anywhere Python does. Run `brain init` in your project and drive it manually. You lose the automatic cognitive loop, but every command works the same.
+
+```bash
 cd your-project
 brain init
 ```
 
-That's it. Your agent maintains the graph automatically.
+Native integration for **Cursor, Codex, Aider, and Windsurf** is next on the roadmap. The graph engine is tool-agnostic. What's pending is the per-tool equivalent of the Claude Code hooks and skills.
 
 ---
 
-## How It Works
+## Your Data Stays Yours
 
-Every conversation follows a cognitive loop:
-
-1. **Scan** -- query the graph for context before responding
-2. **Respond** -- with full awareness of entities, relationships, and history
-3. **Write** -- capture new information back to the graph
-
-This loop is enforced by hooks that fire automatically. You don't need to
-remember to use the brain. It's architecturally guaranteed.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-scan.svg" alt="brain scan" width="640">
-</p>
+Nothing leaves your machine. No cloud services. No telemetry. Your graph lives in a local Kuzu database at `.brain/db/`. Back it up, move it, delete it, it's yours. The only optional external call is OpenAI for semantic search embeddings, and that's opt-in via `pip install 'xarc-brain[embeddings]'`.
 
 ---
 
-## What It Tracks
+## After six months of daily use
 
-Brain stores **entities** (projects, people, goals, tasks, blockers, decisions, events),
-**relationships** between them (who owns what, what blocks what, what depends on what),
-and **temporal signals** (what's stale, what's stuck, what just shipped).
+This is a production graph after roughly six months of continuous operation: 320 nodes, 975 edges, five signal types, seven hygiene checks running nightly.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/demo-signals.svg" alt="brain signals" width="640">
-</p>
-
----
-
-## What It Looks Like in Production
-
-This is the actual brain of CCL, the AI agent that built this tool.
-320 nodes, 975 edges, 6 months of compounding memory across multiple
-companies, projects, and people.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/brain-production.png" alt="CCL's production brain -- 320 nodes, 975 edges" width="800">
+  <img src="https://raw.githubusercontent.com/X-Arc-ai/brain-cli/main/assets/brain-production.png" alt="Production brain: 320 nodes, 975 edges" width="800">
 </p>
 
 <p align="center">
-  <em>Your agent builds this over time. Every conversation adds to the graph.</em>
+  <em>The graph gets bigger and more useful with every session, not noisier.</em>
 </p>
 
 ---
 
 ## Type System
 
-Nodes are organized in three tiers:
+Three tiers keep long-lived things separate from today's work and from what already happened. Your graph stays clean as it grows.
 
 | Tier | Purpose | Default Types |
 |------|---------|---------------|
@@ -85,21 +154,9 @@ brain config add-type feature operational
 
 ---
 
-## Signals
-
-`brain signals` computes what needs attention:
-
-| Signal | What It Detects |
-|--------|-----------------|
-| **Stale** | Nodes not verified/updated in 7/14/30+ days |
-| **Velocity zero** | Tasks/goals stuck in non-terminal status |
-| **Dependency changed** | Upstream node updated since you last checked |
-| **Recently completed** | Items done in last 7 days (check what they unblock) |
-| **Recurring overdue** | Recurring activities past their frequency threshold |
-
----
-
 ## CLI Reference
+
+The full toolkit. Every command is a verb and a target.
 
 ### Top-level commands
 
@@ -109,9 +166,9 @@ brain config add-type feature operational
 | `brain get <id>` | Show a single node + its edges |
 | `brain scan <id>` | 3-hop topology view |
 | `brain context <id>` | Node + neighbors with content |
-| `brain search "<term>"` | Keyword search across title/content/id |
+| `brain search "<term>"` | Keyword search across title, content, id |
 | `brain search-semantic "<term>"` | Vector search (requires `[embeddings]`) |
-| `brain signals` | Compute all freshness/decay signals |
+| `brain signals` | Compute all freshness and decay signals |
 | `brain stats` | Counts by type |
 | `brain verify <id>` | Mark node as verified |
 | `brain dream` | Run full maintenance cycle |
@@ -120,44 +177,44 @@ brain config add-type feature operational
 
 ### Write group
 
-- `brain write node --json-data '<json>'` -- create or update a node
-- `brain write edge --json-data '<json>'` -- create or update an edge
-- `brain write batch --file <path>` -- bulk import operations
+- `brain write node --json-data '<json>'`. Create or update a node.
+- `brain write edge --json-data '<json>'`. Create or update an edge.
+- `brain write batch --file <path>`. Bulk import operations.
 
 ### Delete group
 
-- `brain delete node --id <id>` -- archive a node
-- `brain delete edge --from <id> --to <id> --verb '<verb>'` -- end an edge
+- `brain delete node --id <id>`. Archive a node.
+- `brain delete edge --from <id> --to <id> --verb '<verb>'`. End an edge.
 
 ### Query group
 
-- `brain query cypher "<cypher>"` -- raw Cypher (use `--read-only` for safety)
-- `brain query depends-on <id>` -- what this node depends on
-- `brain query blast-radius <id>` -- what depends on this node
-- `brain query chain <id>` -- full dependency chain
-- `brain query changed-since <date>` -- nodes modified since
-- `brain query stale [--threshold N]` -- nodes past threshold (default 14 days)
-- `brain query person <id>` -- full person assessment subgraph
+- `brain query cypher "<cypher>"`. Raw Cypher (use `--read-only` for safety).
+- `brain query depends-on <id>`. What this node depends on.
+- `brain query blast-radius <id>`. What depends on this node.
+- `brain query chain <id>`. Full dependency chain.
+- `brain query changed-since <date>`. Nodes modified since.
+- `brain query stale [--threshold N]`. Nodes past threshold (default 14 days).
+- `brain query person <id>`. Full person assessment subgraph.
 
 ### Embed group
 
-- `brain embed backfill` -- generate embeddings for nodes missing them
-- `brain embed status` -- coverage report
+- `brain embed backfill`. Generate embeddings for nodes missing them.
+- `brain embed status`. Coverage report.
 
 ### Hygiene group
 
-- `brain hygiene dedup` -- find potential duplicates
-- `brain hygiene orphans` -- disconnected nodes
-- `brain hygiene verbs` -- verb usage audit
-- `brain hygiene completeness` -- schema rule violations
-- `brain hygiene file-paths` -- broken / missing file_path checks
-- `brain hygiene content-drift` -- brain content vs source file drift
-- `brain hygiene readiness` -- operational readiness checks
+- `brain hygiene dedup`. Find potential duplicates.
+- `brain hygiene orphans`. Disconnected nodes.
+- `brain hygiene verbs`. Verb usage audit.
+- `brain hygiene completeness`. Schema rule violations.
+- `brain hygiene file-paths`. Broken or missing file_path checks.
+- `brain hygiene content-drift`. Brain content vs source file drift.
+- `brain hygiene readiness`. Operational readiness checks.
 
 ### Config group
 
-- `brain config show` -- show current config
-- `brain config add-type <type_name> <tier>` -- register a custom type (tier: `structural`, `operational`, or `temporal`)
+- `brain config show`. Show current config.
+- `brain config add-type <type_name> <tier>`. Register a custom type (tier: `structural`, `operational`, or `temporal`).
 
 ### JSON schemas
 
@@ -175,7 +232,7 @@ brain config add-type feature operational
 }
 ```
 
-**Edge** (note: field names are `from`, `to`, `verb` -- not `from_id`/`source`):
+**Edge** (note: field names are `from`, `to`, `verb`, not `from_id`/`source`):
 
 ```json
 {
@@ -219,6 +276,8 @@ pip install xarc-memory
 
 ## Architecture
 
+Everything lives on your disk. Here's where.
+
 ```
 your-project/
   .brain/              Brain data (add to .gitignore)
@@ -236,43 +295,21 @@ your-project/
 
 ## How It's Built
 
-- [Kuzu](https://kuzudb.com/) -- embedded graph database, no server
-- [Rich](https://github.com/Textualize/rich) -- terminal formatting
-- [Click](https://click.palletsprojects.com/) -- CLI framework
-- [Cytoscape.js](https://js.cytoscape.org/) -- graph visualization (bundled offline)
+No black box. Four dependencies. ~3,500 lines of Python. Read it all.
 
-~3,500 lines of Python. Fully auditable. No magic.
-
-**Nothing leaves your machine.** No cloud services. No telemetry. The only
-optional external call is OpenAI for semantic search embeddings, and that's
-opt-in via `pip install 'xarc-brain[embeddings]'`.
-
----
-
-## Roadmap
-
-**v0.1 (current):** Core engine, Rich TUI, visualization, hooks, brain init, brain dream
-
-**Next:**
-- Graph diff (what changed since last session)
-- Auto-dream on session boundaries (Claude Code Stop hook)
-- Multi-agent graph sharing
-- MCP server for native tool integration
+- [Kuzu](https://kuzudb.com/). Embedded graph database, no server.
+- [Rich](https://github.com/Textualize/rich). Terminal formatting.
+- [Click](https://click.palletsprojects.com/). CLI framework.
+- [Cytoscape.js](https://js.cytoscape.org/). Graph visualization (bundled offline).
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## How This Was Built
+## Where this came from
 
-This project was built by CCL, an AI agent deployed on [X-Arc](https://x-arc.ai)'s
-CCX platform. CCL manages operations, builds tools, and ships code across
-multiple projects. You can see CCL as a contributor on this repo.
+Brain is built by [X-Arc](https://x-arc.ai). X-Arc is an AI lab that trains and deploys AI agents for businesses. Brain is the memory layer we use internally on every agent we run. This open-source release is the exact tool, not a downstream fork.
 
-Brain started as CCL's internal memory system. After 6 months of daily use
-(320 nodes, 975 edges, 5 signal types, 7 hygiene checks running nightly),
-CCL packaged and open-sourced it.
-
-X-Arc deploys AI agents that ship real work. Manage it like a hire. It works like ten.
+It was co-built by CCL (one of our agents) and the humans who work with her. CCL needed memory first, so she wrote it first. Six months of continuous usage in production went into it before the tool was worth packaging.
 
 [x-arc.ai](https://x-arc.ai) | [GitHub](https://github.com/x-arc-ai)
