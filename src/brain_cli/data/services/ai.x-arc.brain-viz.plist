@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.x-arc.brain-viz</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$BRAIN_PATH</string>
+        <string>viz</string>
+        <string>--port</string>
+        <string>7171</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$BRAIN_DIR/logs/viz.log</string>
+    <key>StandardErrorPath</key>
+    <string>$BRAIN_DIR/logs/viz-error.log</string>
+</dict>
+</plist>

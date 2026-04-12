@@ -77,6 +77,13 @@ def run_init(project_root=None, skip_memory=False, skip_hooks=False,
         else:
             _step_5_install_claude_code(root, brain_dir, yes=yes)
 
+    # Post-init: suggest replay if memory is available
+    try:
+        import memory  # noqa: F401
+        console.print("\n[bold]Tip:[/] Run `brain replay` to propose a graph seed from conversation history.")
+    except ImportError:
+        pass
+
     console.print(f"\n[#4ade80]Brain initialized.[/] "
                   f"Your graph is at [dim]{brain_dir}[/]")
 
@@ -372,32 +379,10 @@ def _get_brain_claude_md():
     return _FALLBACK_CLAUDE_MD
 
 
-_FALLBACK_CLAUDE_MD = """## Brain (Knowledge Graph)
-
-### Before Responding (Cognitive Loop)
-
-Before answering any substantive question:
-
-1. **Scan**: `brain scan <topic>` -- 3-hop topology map (broad view)
-2. **Assess**: Which nodes are relevant? Which have useful file_paths?
-3. **Dive**: `brain context <node>` on selected nodes (deep view)
-4. **Read**: Follow file_path values for narrative depth
-
-### After Responding (Dual-Write)
-
-If the user shared new information:
-1. Update the relevant project file (if one exists)
-2. `brain write` the corresponding graph update
-Both in the same response. Not optional.
-
-### Commands
-- `brain scan <id>` -- topology map (start here)
-- `brain context <id>` -- deep dive
-- `brain search "<term>"` -- find nodes
-- `brain signals` -- what needs attention
-- `brain write node --json-data '{...}'` -- create/update node
-- `brain write edge --json-data '{...}'` -- create/update edge
-"""
+_FALLBACK_CLAUDE_MD = (
+    "# Brain (Knowledge Graph)\n\n"
+    "Run `brain init` to install the full instruction template.\n"
+)
 
 
 def _open_viz():

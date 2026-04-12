@@ -1,0 +1,10 @@
+[Unit]
+Description=Brain Knowledge Graph Dream Maintenance
+
+[Service]
+Type=oneshot
+ExecStart=$BRAIN_PATH dream --phased
+WorkingDirectory=$BRAIN_DIR/..
+
+[Install]
+WantedBy=default.target

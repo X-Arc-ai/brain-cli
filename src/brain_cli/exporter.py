@@ -187,4 +187,11 @@ def export_batch(conn):
     with open(out_path, "w") as f:
         json.dump(ops, f, indent=2, default=_serialize)
 
+    # Write a dated copy for type-drift detection (one per day)
+    from datetime import date
+    import shutil
+    dated_path = export_dir / f"backup-{date.today().isoformat()}.json"
+    if not dated_path.exists():
+        shutil.copy2(out_path, dated_path)
+
     return str(out_path), len(nodes), len(edges)

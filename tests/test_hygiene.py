@@ -1,5 +1,6 @@
-"""Tests for brain_cli.hygiene -- duplicates, orphans, completeness, verbs."""
+"""Tests for brain_cli.hygiene -- duplicates, orphans, completeness, verbs, edges, type-drift."""
 
+import json
 import os
 
 import pytest
@@ -13,6 +14,9 @@ from brain_cli.hygiene import (
     check_file_paths,
     check_operational_readiness,
     audit_verbs,
+    find_duplicate_edges,
+    fix_duplicate_edges,
+    check_type_drift,
 )
 
 
@@ -290,3 +294,116 @@ class TestCheckOperationalReadiness:
         create_node(db_conn, _node("od1", node_type="decision", title="D", status="pending"))
         violations = check_operational_readiness(db_conn)
         assert any(v["node_id"] == "od1" for v in violations)
+
+
+# ---------------------------------------------------------------------------
+# find_duplicate_edges
+# ---------------------------------------------------------------------------
+
+class TestFindDuplicateEdges:
+    def test_empty_graph_no_duplicates(self, db_conn):
+        assert find_duplicate_edges(db_conn) == []
+
+    def test_single_edge_no_duplicates(self, db_conn):
+        create_node(db_conn, _node("de1", node_type="person", title="Alice"))
+        create_node(db_conn, _node("de2", node_type="project", title="Proj"))
+        create_edge(db_conn, _edge("de1", "de2", "works on"))
+        assert find_duplicate_edges(db_conn) == []
+
+    def test_detects_duplicate_edges(self, db_conn):
+        create_node(db_conn, _node("de3", node_type="person", title="Bob"))
+        create_node(db_conn, _node("de4", node_type="project", title="P2"))
+        create_edge(db_conn, _edge("de3", "de4", "leads"))
+        create_edge(db_conn, _edge("de3", "de4", "leads"))
+        result = find_duplicate_edges(db_conn)
+        assert len(result) >= 1
+        dup = result[0]
+        assert dup["from_id"] == "de3"
+        assert dup["to_id"] == "de4"
+        assert dup["verb"] == "leads"
+        assert dup["count"] == 2
+
+    def test_different_verbs_not_duplicate(self, db_conn):
+        create_node(db_conn, _node("de5", node_type="person", title="Carol"))
+        create_node(db_conn, _node("de6", node_type="project", title="P3"))
+        create_edge(db_conn, _edge("de5", "de6", "leads"))
+        create_edge(db_conn, _edge("de5", "de6", "works on"))
+        assert find_duplicate_edges(db_conn) == []
+
+
+# ---------------------------------------------------------------------------
+# fix_duplicate_edges
+# ---------------------------------------------------------------------------
+
+class TestFixDuplicateEdges:
+    def test_no_duplicates_returns_empty(self, db_conn):
+        create_node(db_conn, _node("fe1", node_type="person", title="Dan"))
+        create_node(db_conn, _node("fe2", node_type="project", title="P4"))
+        create_edge(db_conn, _edge("fe1", "fe2", "manages"))
+        assert fix_duplicate_edges(db_conn) == []
+
+    def test_fixes_duplicates_keeps_one(self, db_conn):
+        create_node(db_conn, _node("fe3", node_type="person", title="Eve"))
+        create_node(db_conn, _node("fe4", node_type="project", title="P5"))
+        create_edge(db_conn, _edge("fe3", "fe4", "leads"))
+        create_edge(db_conn, _edge("fe3", "fe4", "leads"))
+        create_edge(db_conn, _edge("fe3", "fe4", "leads"))
+        result = fix_duplicate_edges(db_conn)
+        assert len(result) == 1
+        assert result[0]["removed"] == 2
+        # Verify only one edge remains
+        assert find_duplicate_edges(db_conn) == []
+
+    def test_fix_result_has_expected_fields(self, db_conn):
+        create_node(db_conn, _node("fe5", node_type="person", title="Frank"))
+        create_node(db_conn, _node("fe6", node_type="project", title="P6"))
+        create_edge(db_conn, _edge("fe5", "fe6", "works on"))
+        create_edge(db_conn, _edge("fe5", "fe6", "works on"))
+        result = fix_duplicate_edges(db_conn)
+        assert len(result) == 1
+        r = result[0]
+        assert "from_id" in r
+        assert "to_id" in r
+        assert "verb" in r
+        assert "removed" in r
+
+
+# ---------------------------------------------------------------------------
+# check_type_drift
+# ---------------------------------------------------------------------------
+
+class TestCheckTypeDrift:
+    def test_no_backups_returns_empty(self, db_conn):
+        assert check_type_drift(db_conn) == []
+
+    def test_no_drift_returns_empty(self, db_conn, brain_dir):
+        create_node(db_conn, _node("td1", node_type="project", title="Proj"))
+        export_dir = brain_dir / "exports"
+        export_dir.mkdir(exist_ok=True)
+        backup = [{"op": "create_node", "id": "td1", "type": "project", "title": "Proj"}]
+        (export_dir / "backup-2026-01-01.json").write_text(json.dumps(backup))
+        assert check_type_drift(db_conn) == []
+
+    def test_detects_type_change(self, db_conn, brain_dir):
+        # Current type is "goal", backup says "task"
+        create_node(db_conn, _node("td2", node_type="goal", title="G", status="active"))
+        export_dir = brain_dir / "exports"
+        export_dir.mkdir(exist_ok=True)
+        backup = [{"op": "create_node", "id": "td2", "type": "task", "title": "G"}]
+        (export_dir / "backup-2026-01-01.json").write_text(json.dumps(backup))
+        result = check_type_drift(db_conn)
+        assert len(result) == 1
+        assert result[0]["node_id"] == "td2"
+        assert result[0]["current_type"] == "goal"
+        assert result[0]["backup_type"] == "task"
+
+    def test_drift_result_has_message(self, db_conn, brain_dir):
+        create_node(db_conn, _node("td3", node_type="person", title="P"))
+        export_dir = brain_dir / "exports"
+        export_dir.mkdir(exist_ok=True)
+        backup = [{"op": "create_node", "id": "td3", "type": "project", "title": "P"}]
+        (export_dir / "backup-2026-03-15.json").write_text(json.dumps(backup))
+        result = check_type_drift(db_conn)
+        assert len(result) == 1
+        assert "message" in result[0]
+        assert "backup_date" in result[0]

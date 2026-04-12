@@ -1,8 +1,10 @@
+import json
 import os
 import re
 
 from .config import (
     get_project_root,
+    get_export_dir,
     FILE_PATH_REQUIRED_TYPES,
     get_file_path_exceptions,
     DECOMPOSITION_VERBS,
@@ -368,3 +370,141 @@ def check_operational_readiness(conn):
         })
 
     return violations
+
+
+def find_duplicate_edges(conn):
+    """Find edges where the same (from, to, verb) appears more than once."""
+    rows = rows_to_dicts(conn.execute("""
+        MATCH (a:Node)-[e:Edge]->(b:Node)
+        WITH a.id AS from_id, b.id AS to_id, e.verb AS verb,
+             count(*) AS cnt, min(e.since) AS oldest, max(e.since) AS newest
+        WHERE cnt > 1
+        RETURN from_id, to_id, verb, cnt, oldest, newest
+        ORDER BY cnt DESC
+    """))
+    return [
+        {
+            "from_id": r["from_id"],
+            "to_id": r["to_id"],
+            "verb": r["verb"],
+            "count": r["cnt"],
+            "oldest_since": r["oldest"],
+            "newest_since": r["newest"],
+        }
+        for r in rows
+    ]
+
+
+def fix_duplicate_edges(conn):
+    """Delete duplicate edges, keeping the oldest per (from, to, verb) group.
+
+    Strategy: for each duplicate group, delete ALL edges then re-create the
+    oldest one. This avoids Kuzu edge-deletion granularity issues where
+    deleting by property match may not uniquely identify a single edge.
+    """
+    duplicates = find_duplicate_edges(conn)
+    fixed = []
+    for dup in duplicates:
+        # Fetch all edges in this group ordered by since ASC
+        edges = rows_to_dicts(conn.execute(
+            "MATCH (a:Node {id: $from_id})-[e:Edge]->(b:Node {id: $to_id}) "
+            "WHERE e.verb = $verb "
+            "RETURN e.since, e.until, e.source, e.note "
+            "ORDER BY e.since ASC",
+            parameters={"from_id": dup["from_id"], "to_id": dup["to_id"], "verb": dup["verb"]},
+        ))
+        if len(edges) <= 1:
+            continue
+
+        # Keep the first (oldest)
+        keeper = edges[0]
+
+        # Delete ALL edges in this group
+        conn.execute(
+            "MATCH (a:Node {id: $from_id})-[e:Edge]->(b:Node {id: $to_id}) "
+            "WHERE e.verb = $verb DELETE e",
+            parameters={"from_id": dup["from_id"], "to_id": dup["to_id"], "verb": dup["verb"]},
+        )
+
+        # Re-create the keeper
+        params = {
+            "from_id": dup["from_id"],
+            "to_id": dup["to_id"],
+            "verb": dup["verb"],
+        }
+        set_clauses = []
+        if keeper.get("e.since"):
+            set_clauses.append("e.since = $since")
+            params["since"] = keeper["e.since"]
+        if keeper.get("e.until"):
+            set_clauses.append("e.until = $until")
+            params["until"] = keeper["e.until"]
+        if keeper.get("e.source"):
+            set_clauses.append("e.source = $source")
+            params["source"] = keeper["e.source"]
+        if keeper.get("e.note"):
+            set_clauses.append("e.note = $note")
+            params["note"] = keeper["e.note"]
+
+        create_q = (
+            "MATCH (a:Node {id: $from_id}), (b:Node {id: $to_id}) "
+            "CREATE (a)-[e:Edge {verb: $verb}]->(b)"
+        )
+        if set_clauses:
+            create_q += " SET " + ", ".join(set_clauses)
+        conn.execute(create_q, parameters=params)
+
+        fixed.append({
+            "from_id": dup["from_id"],
+            "to_id": dup["to_id"],
+            "verb": dup["verb"],
+            "removed": dup["count"] - 1,
+        })
+    return fixed
+
+
+def check_type_drift(conn, max_backups=5):
+    """Compare current node types against dated backup snapshots."""
+    export_dir = get_export_dir()
+    if not export_dir.exists():
+        return []
+
+    # Find dated backup files, sorted newest first
+    backups = sorted(
+        export_dir.glob("backup-*.json"),
+        key=lambda p: p.stem,
+        reverse=True,
+    )[:max_backups]
+
+    if not backups:
+        return []
+
+    # Get current node types
+    current = {
+        r["n.id"]: r["n.type"]
+        for r in rows_to_dicts(conn.execute("MATCH (n:Node) RETURN n.id, n.type"))
+    }
+
+    drift = []
+    seen = set()
+    for backup_path in backups:
+        with open(backup_path) as f:
+            ops = json.load(f)
+        for op in ops:
+            if op.get("op") != "create_node":
+                continue
+            node_id = op.get("id")
+            backup_type = op.get("type")
+            current_type = current.get(node_id)
+            if current_type and backup_type and current_type != backup_type:
+                key = (node_id, current_type, backup_type)
+                if key not in seen:
+                    seen.add(key)
+                    drift.append({
+                        "node_id": node_id,
+                        "current_type": current_type,
+                        "backup_type": backup_type,
+                        "backup_date": backup_path.stem.replace("backup-", ""),
+                        "message": f"Node '{node_id}' type changed: {backup_type} -> {current_type}",
+                    })
+    return drift

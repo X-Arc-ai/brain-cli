@@ -16,7 +16,8 @@ from .reader import (get_node, get_context, scan_subgraph, query_cypher, query_d
                      query_person, search_nodes, search_semantic, get_all_nodes_for_embedding, get_stats)
 from .signals import compute_all_signals
 from .hygiene import (find_duplicates, find_orphans, audit_verbs, check_completeness,
-                      check_operational_readiness, check_file_paths, check_content_drift)
+                      check_operational_readiness, check_file_paths, check_content_drift,
+                      find_duplicate_edges, fix_duplicate_edges, check_type_drift)
 from .exporter import export_cytoscape, export_json, export_batch
 
 
@@ -638,6 +639,60 @@ def hygiene_readiness(ctx):
         format_hygiene("readiness", violations)
 
 
+@hygiene.command("dedup-edges")
+@click.pass_context
+def hygiene_dedup_edges(ctx):
+    """Find duplicate edges (same from/to/verb)."""
+    conn = get_connection()
+    results = find_duplicate_edges(conn)
+    if not results:
+        click.echo("No duplicate edges found.")
+    elif ctx.obj.get("json_mode"):
+        _output(results)
+    else:
+        from .tui import format_hygiene
+        format_hygiene("dedup-edges", results)
+
+
+@hygiene.command("fix-edges")
+@click.option("--yes", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def hygiene_fix_edges(ctx, yes):
+    """Remove duplicate edges, keeping the oldest."""
+    conn = get_connection()
+    dupes = find_duplicate_edges(conn)
+    if not dupes:
+        click.echo("No duplicate edges to fix.")
+        return
+    if not yes:
+        click.echo(f"Found {len(dupes)} duplicate edge group(s).")
+        if not click.confirm("Proceed?"):
+            return
+    results = fix_duplicate_edges(conn)
+    if ctx.obj.get("json_mode"):
+        _output(results)
+    else:
+        for r in results:
+            click.echo(f"  Fixed {r['from_id']} --[{r['verb']}]--> {r['to_id']}: removed {r['removed']}")
+    _auto_export()
+
+
+@hygiene.command("type-drift")
+@click.option("--backups", default=5, help="Number of backups to compare")
+@click.pass_context
+def hygiene_type_drift(ctx, backups):
+    """Detect node type changes across backup snapshots."""
+    conn = get_connection()
+    results = check_type_drift(conn, max_backups=backups)
+    if not results:
+        click.echo("No type drift detected.")
+    elif ctx.obj.get("json_mode"):
+        _output(results)
+    else:
+        from .tui import format_hygiene
+        format_hygiene("type-drift", results)
+
+
 # --- Verify ---
 
 @cli.command()
@@ -721,9 +776,19 @@ def config_show():
 
 @cli.command()
 @click.option("--dry-run", is_flag=True, help="Show what would be fixed without applying")
+@click.option("--phased", is_flag=True, help="Run as multi-session orchestration (Claude Code only)")
 @click.pass_context
-def dream(ctx, dry_run):
+def dream(ctx, dry_run, phased):
     """Run brain maintenance (hygiene, signals, optional conversation replay)."""
+    if phased:
+        from .dream import run_phased_dream
+        result = run_phased_dream(dry_run=dry_run)
+        if ctx.obj.get("json_mode"):
+            _output(result)
+        else:
+            phases = result.get("phase_results", {})
+            click.echo(f"Phased dream complete: {len(phases)} phases run")
+        return
     from .tui import console as tui_console
 
     tui_console.print("[bold]Brain Dream[/] -- maintenance cycle\n")
@@ -745,8 +810,10 @@ def dream(ctx, dry_run):
         ("orphans", find_orphans),
         ("completeness", check_completeness),
         ("file-paths", check_file_paths),
+        ("content-drift", check_content_drift),
         ("verbs", audit_verbs),
         ("readiness", check_operational_readiness),
+        ("dedup-edges", find_duplicate_edges),
     ]:
         result = check_fn(conn)
         if result:
@@ -769,6 +836,56 @@ def dream(ctx, dry_run):
         last_dream_path = get_brain_dir() / ".last-dream"
         last_dream_path.write_text(str(int(time.time())))
 
+
+# --- Replay ---
+
+@cli.command()
+@click.option("--since", default=90, help="Days of history to replay")
+@click.option("--dry-run", is_flag=True, help="Show proposals without executing")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def replay(ctx, since, dry_run, yes):
+    """Mine conversation history for graph updates."""
+    from .replay import run_replay
+    conn = get_connection()
+    try:
+        result = run_replay(conn, since_days=since, yes=yes, dry_run=dry_run)
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
+    if ctx.obj.get("json_mode"):
+        _output(result)
+    else:
+        proposals = result.get("proposals", [])
+        click.echo(f"Replay complete: {len(proposals)} proposal(s)")
+        if dry_run:
+            for p in proposals:
+                click.echo(f"  {p.get('op', '?')}: {p.get('id', p.get('from', '?'))}")
+
+
+# --- Service ---
+
+@cli.group()
+def service():
+    """Manage background services (viz, dream)."""
+    pass
+
+
+@service.command()
+@click.argument("name", type=click.Choice(["viz", "dream"]))
+def install(name):
+    """Install a background service."""
+    from .services import install_service
+    path = install_service(name)
+    click.echo(f"Installed {name} service at {path}")
+
+
+@service.command()
+@click.argument("name", type=click.Choice(["viz", "dream"]))
+def uninstall(name):
+    """Uninstall a background service."""
+    from .services import uninstall_service
+    path = uninstall_service(name)
+    click.echo(f"Uninstalled {name} service (was at {path})")
 
 
 # --- Viz ---

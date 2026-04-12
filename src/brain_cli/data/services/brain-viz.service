@@ -1,0 +1,12 @@
+[Unit]
+Description=Brain Knowledge Graph Visualization Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$BRAIN_PATH viz --port 7171
+WorkingDirectory=$BRAIN_DIR/..
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
