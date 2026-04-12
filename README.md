@@ -121,6 +121,18 @@ Nothing leaves your machine. No cloud services. No telemetry. Your graph lives i
 
 ---
 
+## Making it yours
+
+After `brain init`, your graph has a project node and an empty database. That's a starting point, not a useful brain.
+
+The graph is only as good as the context you give it. The first few sessions matter the most. Tell your agent what you're working on, who's involved, what's in progress, what's blocked. The hooks will capture it and write it to the graph as you talk. One focused conversation where you walk through the state of your project is worth more than twenty sessions of incidental context.
+
+From there, it compounds. Every session adds nodes, updates statuses, connects relationships. The signals start firing once there's enough structure to compute over. You don't maintain the graph manually. You just work, and the graph grows alongside the work.
+
+If you install [xarc-memory](https://github.com/X-Arc-ai/memory) alongside brain, you also get `brain replay`, which mines your past Claude Code conversations and proposes graph nodes from them. That can accelerate the bootstrap, but it's optional. The primary path is: seed the basics, then let the hooks do the rest.
+
+---
+
 ## After six months of daily use
 
 This is a production graph after roughly six months of continuous operation: 320 nodes, 975 edges, five signal types, seven hygiene checks running nightly.
@@ -302,7 +314,11 @@ No black box. Four dependencies. ~3,500 lines of Python. Read it all.
 - [Click](https://click.palletsprojects.com/). CLI framework.
 - [Cytoscape.js](https://js.cytoscape.org/). Graph visualization (bundled offline).
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+---
+
+## Contributing
+
+This is an open-source project. Contributions that make the tool better are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
 ---
 
