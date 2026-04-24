@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pypi/v/xarc-brain?color=4ade80&label=pypi" alt="PyPI"></a>
-  <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pypi/dm/xarc-brain?color=4ade80&label=downloads%2Fmonth" alt="PyPI downloads"></a>
+  <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pepy/dt/xarc-brain?color=4ade80&label=downloads" alt="PyPI downloads"></a>
   <a href="https://pypi.org/project/xarc-brain/"><img src="https://img.shields.io/pypi/pyversions/xarc-brain?color=4ade80" alt="Python versions"></a>
   <a href="https://github.com/X-Arc-ai/brain-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-4ade80" alt="License"></a>
   <a href="https://x-arc.ai"><img src="https://img.shields.io/badge/by-X--Arc-4ade80" alt="X-Arc"></a>
